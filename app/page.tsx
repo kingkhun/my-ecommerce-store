@@ -1,6 +1,6 @@
 'use client'; // This tells Next.js this page is interactive
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function Home() {
   const [products, setProducts] = useState<any[]>([]);
