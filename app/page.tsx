@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
 
 interface Product {
   id: string;
@@ -223,38 +224,54 @@ export default function Home() {
         <h2 className="text-3xl font-bold text-gray-900 mb-8">
           {searchQuery ? `Results for "${searchQuery}"` : "Featured Gear"}
         </h2>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredProducts.map((product) => (
             <div key={product.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition flex flex-col">
-              <div className="h-56 w-full relative bg-gray-100">
-                {product.image_url ? (
-                  <img 
-                    src={product.image_url} 
-                    alt={product.name} 
-                    className="w-full h-full object-cover" 
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400 italic">No image found</div>
-                )}
-              </div>
               
-              <div className="p-6 flex flex-col flex-1">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-xl font-bold line-clamp-1">{product.name}</h3>
-                  <span className="text-green-600 font-bold text-lg">${product.price}</span>
+              {/* 1. Wrap the Image and Info in a Link */}
+              <Link href={`/product/${product.id}`} className="flex-1 flex flex-col group">
+                
+                {/* IMAGE SECTION */}
+                <div className="h-56 w-full relative bg-gray-100 overflow-hidden">
+                  {product.image_url ? (
+                    <img 
+                      src={product.image_url} 
+                      alt={product.name} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400 italic">No image found</div>
+                  )}
                 </div>
-                <p className="text-gray-500 text-sm mb-6 leading-relaxed line-clamp-2">{product.description}</p>
+                
+                {/* TEXT CONTENT */}
+                <div className="p-6 flex flex-col flex-1">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-xl font-bold line-clamp-1 group-hover:text-blue-600 transition-colors">
+                      {product.name}
+                    </h3>
+                    <span className="text-green-600 font-bold text-lg">${product.price}</span>
+                  </div>
+                  <p className="text-gray-500 text-sm mb-6 leading-relaxed line-clamp-2">
+                    {product.description}
+                  </p>
+                </div>
+              </Link>
+
+              {/* 2. Keep the Button OUTSIDE the Link */}
+              <div className="px-6 pb-6">
                 <button 
                   onClick={() => addToCart(product)}
-                  className="mt-auto w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition active:scale-95"
+                  className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition active:scale-95"
                 >
                   Add to Cart
                 </button>
               </div>
+              
             </div>
           ))}
         </div>
+        
         {/*
         {filteredProducts.length === 0 && (
           <div className="text-center py-20">
