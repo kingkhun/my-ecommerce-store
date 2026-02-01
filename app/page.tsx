@@ -10,15 +10,19 @@ interface Product {
   image_url: string;
   category: string; 
 }
-
+// MAIN COMPONENT
 export default function Home() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [cart, setCart] = useState<Product[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [mounted, setMounted] = useState(false); 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  // STATE VARIABLES
+  const [products, setProducts] = useState<Product[]>([]); // ALL PRODUCTS FROM SUPABASE
+  const [cart, setCart] = useState<Product[]>([]); // SHOPPING CART
+  const [isCartOpen, setIsCartOpen] = useState(false); // CART SIDEBAR VISIBILITY
+  const [mounted, setMounted] = useState(false); // TO CHECK IF COMPONENT IS MOUNTED
+  const [searchQuery, setSearchQuery] = useState(''); // SEARCH QUERY
+  const [activeCategory, setActiveCategory] = useState('All'); // ACTIVE CATEGORY FILTER
+  const [showSuccess, setShowSuccess] = useState(false); // ORDER SUCCESS MESSAGE
+  const [lastOrderId, setLastOrderId] = useState<string | null>(null); // LAST ORDER ID
 
+  // INITIAL LOAD
   useEffect(() => {
     setMounted(true);
     const savedCart = localStorage.getItem('my_ecommerce_cart');
@@ -29,7 +33,7 @@ export default function Home() {
         console.error("Failed to parse cart", e);
       }
     }
-    
+    // FETCH PRODUCTS FROM SUPABASE
     async function getProducts() {
       const { data, error } = await supabase.from('products').select('*');
       if (error) console.error("Supabase Error:", error.message);
@@ -37,20 +41,20 @@ export default function Home() {
     }
     getProducts();
   }, []);
-
+  // SYNC CART TO LOCALSTORAGE
   useEffect(() => {
     if (mounted) {
       localStorage.setItem('my_ecommerce_cart', JSON.stringify(cart));
     }
   }, [cart, mounted]);
-
+  // TOTAL PRICE CALCULATION
   const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
-
+  // ADD TO CART
   const addToCart = (product: Product) => {
     setCart([...cart, product]);
     setIsCartOpen(true);
   };
-
+  // REMOVE FROM CART BY INDEX
   const removeFromCart = (index: number) => {
     const newCart = cart.filter((_, i) => i !== index); // A cleaner way to remove by index
     setCart(newCart);
@@ -61,15 +65,69 @@ export default function Home() {
     product.name.toLowerCase().includes(searchQuery.toLowerCase())
   ); */
 
+  // CATEGORIES
   const categories = ['All', 'Gaming', 'Business', 'UltraBook'];
-
+  // FILTERED PRODUCTS BASED ON SEARCH AND CATEGORY
   const filteredProducts = products.filter((product) => {
   const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
   const matchesCategory = activeCategory === 'All' || product.category === activeCategory;
   return matchesSearch && matchesCategory;
   });
 
+  // CHECKOUT FUNCTION
+  const handleCheckout = async () => {
+  if (cart.length === 0) return alert("Your cart is empty!");
+
+  // For now, we'll use a placeholder user ID since we haven't built Login yet.
+  // In a real app, this would come from Supabase Auth.
+  const tempUserId = null; 
+
+  try {
+    // 1. Insert into 'orders' table
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .insert([{ 
+        user_id: tempUserId, 
+        total_price: totalPrice, 
+        status: 'pending' 
+      }])
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    // 2. Prepare items for 'order_items' table
+    const orderItems = cart.map((item) => ({
+      order_id: orderData.id,
+      product_id: item.id,
+      quantity: 1, // Defaulting to 1 for now
+      price_at_purchase: item.price
+    }));
+
+    // 3. Insert into 'order_items'
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItems);
+
+    if (itemsError) throw itemsError;
+
+    // 4. Success! Clear cart and close sidebar
+    //alert("Order placed successfully! 🎉");
+    setLastOrderId(orderData.id); // Save the ID to show the user
+    setShowSuccess(true);         // Trigger the success UI
+    setCart([]);                  // Clear the cart
+    setIsCartOpen(false);         // Close the sidebar
+    localStorage.removeItem('my_ecommerce_cart');
+
+  } catch (error: any) {
+    console.error("Checkout failed:", error.message);
+    alert("Something went wrong with your order.");
+  }
+  };
+
+  // RENDER
   return (
+    // MAIN CONTAINER
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
@@ -84,7 +142,7 @@ export default function Home() {
           </button>
         </div>
       </nav>
-
+      
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setIsCartOpen(false)} />
@@ -118,7 +176,10 @@ export default function Home() {
                 <span>Total</span>
                 <span>${totalPrice}</span>
               </div>
-              <button className="w-full bg-green-600 text-white text-lg font-bold py-4 rounded-xl hover:bg-green-700 transition">
+              <button 
+                onClick={handleCheckout}
+                className="w-full bg-green-600 text-white text-lg font-bold py-4 rounded-xl hover:bg-green-700 transition active:scale-95"
+              >
                 Proceed to Checkout
               </button>
             </div>
@@ -213,6 +274,31 @@ export default function Home() {
         </div>
         )}
       </main>
+      {/* SUCCESS MODAL */}
+      {showSuccess && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-blue-900/20 backdrop-blur-sm" onClick={() => setShowSuccess(false)} />
+          
+          {/* Modal Content */}
+          <div className="relative bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center transform animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-4xl mx-auto mb-6">
+              ✓
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Order Placed!</h2>
+            <p className="text-gray-500 mb-6">
+              Thank you for your purchase. Your order <span className="font-mono font-bold text-blue-600">#{lastOrderId?.slice(0, 8)}</span> is being processed.
+            </p>
+            
+            <button 
+              onClick={() => setShowSuccess(false)}
+              className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition"
+            >
+              Continue Shopping
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
