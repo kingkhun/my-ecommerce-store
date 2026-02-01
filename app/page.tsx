@@ -2,107 +2,123 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-// 1. Define what a Product looks like
 interface Product {
   id: string;
   name: string;
   price: number;
   description: string;
-  image_url?: string;
+  image_url: string;
+  category: string; 
 }
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isCartOpen, setIsCartOpen] = useState(false); // Controls the Sidebar
-  // 1. Calculate Total Price automatically
-  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [mounted, setMounted] = useState(false); 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
 
-  // 2. Fetch data from Supabase
   useEffect(() => {
+    setMounted(true);
+    const savedCart = localStorage.getItem('my_ecommerce_cart');
+    if (savedCart) {
+      try {
+        setCart(JSON.parse(savedCart));
+      } catch (e) {
+        console.error("Failed to parse cart", e);
+      }
+    }
+    
     async function getProducts() {
       const { data, error } = await supabase.from('products').select('*');
-      if (error) console.error('Error:', error);
-      else setProducts(data || []);
-      setLoading(false);
+      if (error) console.error("Supabase Error:", error.message);
+      if (data) setProducts(data);
     }
     getProducts();
   }, []);
 
-  // 3. Simple Add to Cart function
-  //const addToCart = (product: Product) => {
-    //setCart((prevCart) => [...prevCart, product]);
-  //};
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('my_ecommerce_cart', JSON.stringify(cart));
+    }
+  }, [cart, mounted]);
+
+  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
 
   const addToCart = (product: Product) => {
     setCart([...cart, product]);
-    setIsCartOpen(true); // Open the cart automatically when adding
+    setIsCartOpen(true);
   };
 
   const removeFromCart = (index: number) => {
-    const newCart = [...cart];
-    newCart.splice(index, 1); // Removes the item at that specific position
+    const newCart = cart.filter((_, i) => i !== index); // A cleaner way to remove by index
     setCart(newCart);
   };
 
+  /*
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(searchQuery.toLowerCase())
+  ); */
+
+  const categories = ['All', 'Gaming', 'Business', 'UltraBook'];
+
+  const filteredProducts = products.filter((product) => {
+  const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+  const matchesCategory = activeCategory === 'All' || product.category === activeCategory;
+  return matchesSearch && matchesCategory;
+  });
+
   return (
-    <div className="min-h-screen bg-gray-50 relative">
-      {/* NAVIGATION BAR */}
-      <nav className="bg-white shadow-sm sticky top-0 z-10">
+    <div className="min-h-screen bg-gray-50">
+      <nav className="bg-white shadow-sm sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600">MyStore</h1>
+          <h1 className="text-2xl font-bold text-blue-600">Yoe Yar store</h1>
+          <h6 className="text-gray-600 italic">Built with Supabase + Next.js</h6>
           <button 
             onClick={() => setIsCartOpen(true)}
-            className="relative bg-blue-100 px-4 py-2 rounded-full hover:bg-blue-200 transition flex items-center"
+            className="bg-blue-600 text-white px-5 py-2 rounded-full font-bold hover:bg-blue-700 transition flex items-center gap-2"
           >
-            <span className="text-lg">🛒</span>
-            <span className="ml-2 font-semibold text-blue-700">{cart.length} items</span>
+            <span>🛒</span>
+            <span>{mounted ? cart.length : 0} items</span>
           </button>
         </div>
       </nav>
 
-      {/* CART SIDEBAR (Drawer) */}
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          {/* Dark background overlay */}
-          <div className="absolute inset-0 bg-black/30" onClick={() => setIsCartOpen(false)} />
-          
-          {/* Sidebar Content */}
-          <div className="relative w-full max-w-md bg-white h-full shadow-xl p-6 flex flex-col">
-            <div className="flex justify-between items-center mb-6">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIsCartOpen(false)} />
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl p-6 flex flex-col">
+            <div className="flex justify-between items-center mb-6 border-b pb-4">
               <h2 className="text-2xl font-bold">Your Cart</h2>
-              <button onClick={() => setIsCartOpen(false)} className="text-gray-500 text-2xl">×</button>
+              <button onClick={() => setIsCartOpen(false)} className="text-3xl text-gray-400 hover:text-black">×</button>
             </div>
-
+            
             <div className="flex-1 overflow-y-auto">
               {cart.length === 0 ? (
-                <p className="text-gray-500 text-center mt-10">Your cart is empty.</p>
+                <p className="text-gray-500 text-center mt-20">Your cart is empty.</p>
               ) : (
                 cart.map((item, index) => (
-                  <div key={index} className="flex justify-between items-center border-b py-4">
-                    <div>
-                      <h4 className="font-semibold">{item.name}</h4>
-                      <p className="text-blue-600">${item.price}</p>
+                  <div key={`${item.id}-${index}`} className="flex justify-between items-center py-4 border-b">
+                    <div className="flex gap-4 items-center">
+                      <img src={item.image_url} alt="" className="w-12 h-12 rounded object-cover bg-gray-100" />
+                      <div>
+                        <h4 className="font-semibold text-gray-800">{item.name}</h4>
+                        <p className="text-blue-600 font-bold">${item.price}</p>
+                      </div>
                     </div>
-                    <button 
-                      onClick={() => removeFromCart(index)}
-                      className="text-red-500 hover:text-red-700 text-sm"
-                    >
-                      Remove
-                    </button>
+                    <button onClick={() => removeFromCart(index)} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
                   </div>
                 ))
               )}
             </div>
 
-            {/* Checkout Section */}
-            <div className="border-t pt-6 mt-4">
-              <div className="flex justify-between text-xl font-bold mb-4">
-                <span>Total:</span>
+            <div className="border-t pt-6">
+              <div className="flex justify-between text-2xl font-bold mb-6">
+                <span>Total</span>
                 <span>${totalPrice}</span>
               </div>
-              <button className="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition">
+              <button className="w-full bg-green-600 text-white text-lg font-bold py-4 rounded-xl hover:bg-green-700 transition">
                 Proceed to Checkout
               </button>
             </div>
@@ -110,44 +126,91 @@ export default function Home() {
         </div>
       )}
 
-      {/* PRODUCT GRID */}
-      <main className="max-w-6xl mx-auto p-6">
-        {loading ? (
-          <div className="text-center py-20 text-gray-500">Loading products...</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {products.map((product) => (
-              <div key={product.id} className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 border border-gray-100">
-                {/* Placeholder for Product Image */}
-                <div className="h-48 bg-gray-200 flex items-center justify-center text-gray-400">
-                   Image Placeholder
-                </div>
-                
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-xl font-bold text-gray-800">{product.name}</h3>
-                    <span className="text-lg font-bold text-green-600">${product.price}</span>
-                  </div>
-                  <p className="text-gray-600 text-sm mb-6 line-clamp-2">
-                    {product.description || "No description available for this amazing product."}
-                  </p>
-                  
-                  <button 
-                    onClick={() => addToCart(product)}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors duration-200 flex items-center justify-center gap-2"
-                  >
-                    <span>Add to Cart</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <section className="max-w-6xl mx-auto px-8 mt-8">
+        <div className="relative">
+          <span className="absolute left-4 top-3.5 text-gray-400">🔍</span>
+          <input
+            type="text"
+            spellCheck="false"
+            autoComplete="off"
+            placeholder="Search for laptops (e.g. HP, Lenovo)..."
+            className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition shadow-sm"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </section>
+      {/* CATEGORY FILTER */}
+      <section className="max-w-6xl mx-auto px-8 mt-6 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={`px-6 py-2 rounded-full font-medium transition whitespace-nowrap ${
+              activeCategory === cat 
+              ? 'bg-blue-600 text-white shadow-md' 
+              : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-400'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </section>
 
-        {products.length === 0 && !loading && (
+
+      <main className="max-w-6xl mx-auto p-8">
+        <h2 className="text-3xl font-bold text-gray-900 mb-8">
+          {searchQuery ? `Results for "${searchQuery}"` : "Featured Gear"}
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {filteredProducts.map((product) => (
+            <div key={product.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition flex flex-col">
+              <div className="h-56 w-full relative bg-gray-100">
+                {product.image_url ? (
+                  <img 
+                    src={product.image_url} 
+                    alt={product.name} 
+                    className="w-full h-full object-cover" 
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400 italic">No image found</div>
+                )}
+              </div>
+              
+              <div className="p-6 flex flex-col flex-1">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-xl font-bold line-clamp-1">{product.name}</h3>
+                  <span className="text-green-600 font-bold text-lg">${product.price}</span>
+                </div>
+                <p className="text-gray-500 text-sm mb-6 leading-relaxed line-clamp-2">{product.description}</p>
+                <button 
+                  onClick={() => addToCart(product)}
+                  className="mt-auto w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition active:scale-95"
+                >
+                  Add to Cart
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/*
+        {filteredProducts.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-gray-500 italic">Your shop is empty. Add some products in your Supabase Dashboard!</p>
+            <div className="text-5xl mb-4 text-gray-300 italic">Empty!</div>
+            <p className="text-gray-500">No products found matching "{searchQuery}"</p>
           </div>
+        )} */}
+        {filteredProducts.length === 0 && (
+        <div className="text-center py-20 text-gray-500">
+          <p className="text-xl italic">Oops! No {activeCategory !== 'All' ? activeCategory : ''} laptops found matching "{searchQuery}"</p>
+          <button 
+            onClick={() => {setSearchQuery(''); setActiveCategory('All');}}
+            className="mt-4 text-blue-600 underline"
+          >
+            Clear all filters
+          </button>
+        </div>
         )}
       </main>
     </div>
