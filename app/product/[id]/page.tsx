@@ -12,12 +12,14 @@ interface Product {
   image_url: string;
   category: string;
 }
-
+// Product Detail Page Component
 export default function ProductDetail() {
   const { id } = useParams(); // Grabs the 'id' from the URL
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  
 
+  // Fetch product details based on the ID from the URL
   useEffect(() => {
     async function fetchProduct() {
       const { data, error } = await supabase
@@ -34,12 +36,33 @@ export default function ProductDetail() {
 
   if (loading) return <div className="p-20 text-center text-2xl">Loading laptop details...</div>;
   if (!product) return <div className="p-20 text-center text-2xl">Product not found.</div>;
+  // Add to cart function
+  
+  const handleAddToCart = () => {
+    if (!product) return;
+
+    // 1. Get the existing cart from LocalStorage
+    const savedCart = localStorage.getItem('my_ecommerce_cart');
+    const currentCart = savedCart ? JSON.parse(savedCart) : [];
+
+    // 2. Add the new product
+    const updatedCart = [...currentCart, product];
+
+    // 3. Save it back
+    localStorage.setItem('my_ecommerce_cart', JSON.stringify(updatedCart));
+
+    // 4. Optional: Send them home to see the cart open
+    window.location.href = "/"; 
+  };
+
+
 
   return (
     <div className="min-h-screen bg-white p-8">
       <div className="max-w-5xl mx-auto">
-        <Link href="/" className="text-blue-600 hover:underline mb-8 inline-block">
-          ← Back to Store
+        <Link href="/" className="text-blue-600 hover:text-blue-800 font-medium mb-8 inline-flex items-center gap-2 group transition-colors">
+          <span className="group-hover:-translate-x-1 transition-transform">←</span> 
+          Back to Store
         </Link>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
@@ -59,7 +82,10 @@ export default function ProductDetail() {
               {product.description}
             </p>
             
-            <button className="bg-blue-600 text-white text-xl font-bold py-5 rounded-2xl hover:bg-blue-700 transition">
+            <button 
+              onClick={handleAddToCart}
+              className="bg-blue-600 text-white text-xl font-bold py-5 rounded-2xl hover:bg-blue-700 transition active:scale-95"
+            >
               Add to Shopping Cart
             </button>
           </div>

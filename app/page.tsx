@@ -61,6 +61,25 @@ export default function Home() {
     setCart(newCart);
   };
 
+  // USER AUTH STATE
+  const [user, setUser] = useState<any>(null);
+  // AUTH STATE LISTENER
+  useEffect(() => {
+    // Check current user session
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    getUser();
+
+    // Listen for login/logout changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, []);
+
   /*
   const filteredProducts = products.filter((product) =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -132,8 +151,14 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600">Yoe Yar store</h1>
+          <h1 className="text-2xl font-bold text-blue-600">My store</h1>
           <h6 className="text-gray-600 italic">Built with Supabase + Next.js</h6>
+          {user ? (
+            <span className="text-sm text-gray-600">Hi, {user.email}</span>
+          ) : (
+            <Link href="/login" className="text-blue-600 font-semibold">Login</Link>
+          )}
+          
           <button 
             onClick={() => setIsCartOpen(true)}
             className="bg-blue-600 text-white px-5 py-2 rounded-full font-bold hover:bg-blue-700 transition flex items-center gap-2"
