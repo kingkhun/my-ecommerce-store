@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Product {
   id: string;
@@ -22,7 +23,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState('All'); // ACTIVE CATEGORY FILTER
   const [showSuccess, setShowSuccess] = useState(false); // ORDER SUCCESS MESSAGE
   const [lastOrderId, setLastOrderId] = useState<string | null>(null); // LAST ORDER ID
-
+  const router = useRouter();
   // INITIAL LOAD
   useEffect(() => {
     setMounted(true);
@@ -94,55 +95,71 @@ export default function Home() {
   return matchesSearch && matchesCategory;
   });
 
+  
   // CHECKOUT FUNCTION
   const handleCheckout = async () => {
   if (cart.length === 0) return alert("Your cart is empty!");
 
-  // For now, we'll use a placeholder user ID since we haven't built Login yet.
-  // In a real app, this would come from Supabase Auth.
-  const tempUserId = null; 
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
-  try {
-    // 1. Insert into 'orders' table
-    const { data: orderData, error: orderError } = await supabase
-      .from('orders')
-      .insert([{ 
-        user_id: tempUserId, 
-        total_price: totalPrice, 
-        status: 'pending' 
-      }])
-      .select()
-      .single();
+      if (!user) {
+        alert("Please login to place an order!");
+        router.push('/login');
+        return;
+      }
 
-    if (orderError) throw orderError;
+      // NEW: Verify the profile exists before inserting order
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .single();
 
-    // 2. Prepare items for 'order_items' table
-    const orderItems = cart.map((item) => ({
-      order_id: orderData.id,
-      product_id: item.id,
-      quantity: 1, // Defaulting to 1 for now
-      price_at_purchase: item.price
-    }));
+        if (!profile) {
+          // If trigger failed, create profile manually on the fly
+          await supabase.from('profiles').insert([{ id: user.id, full_name: user.email }]);
+        }
 
-    // 3. Insert into 'order_items'
-    const { error: itemsError } = await supabase
-      .from('order_items')
-      .insert(orderItems);
+      // Now proceed with the order insertion as you had it...
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert([{ 
+          user_id: user.id, 
+          total_price: totalPrice, 
+          status: 'pending' 
+        }])
+        .select()
+        .single();
 
-    if (itemsError) throw itemsError;
+      if (orderError) throw orderError;
 
-    // 4. Success! Clear cart and close sidebar
-    //alert("Order placed successfully! 🎉");
-    setLastOrderId(orderData.id); // Save the ID to show the user
-    setShowSuccess(true);         // Trigger the success UI
-    setCart([]);                  // Clear the cart
-    setIsCartOpen(false);         // Close the sidebar
-    localStorage.removeItem('my_ecommerce_cart');
+      // 4. Prepare items for 'order_items' table
+      const orderItems = cart.map((item) => ({
+        order_id: orderData.id,
+        product_id: item.id,
+        quantity: 1, 
+        price_at_purchase: item.price
+      }));
 
-  } catch (error: any) {
-    console.error("Checkout failed:", error.message);
-    alert("Something went wrong with your order.");
-  }
+      // 5. Insert into 'order_items'
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) throw itemsError;
+
+      // 6. Success UI
+      setLastOrderId(orderData.id); 
+      setShowSuccess(true);         
+      setCart([]);                  
+      setIsCartOpen(false);         
+      localStorage.removeItem('my_ecommerce_cart');
+
+    } catch (error: any) {
+      console.error("Checkout failed:", error.message);
+      alert("Something went wrong with your order.");
+    }
   };
 
   // RENDER
@@ -154,9 +171,21 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-blue-600">My store</h1>
           <h6 className="text-gray-600 italic">Built with Supabase + Next.js</h6>
           {user ? (
-            <span className="text-sm text-gray-600">Hi, {user.email}</span>
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-gray-700 bg-gray-100 px-3 py-1 rounded-full">
+                👤 {user.email}
+              </span>
+              <button 
+                onClick={() => supabase.auth.signOut()}
+                className="text-sm text-red-500 hover:text-red-700 font-semibold transition"
+              >
+                Logout
+              </button>
+            </div>
           ) : (
-            <Link href="/login" className="text-blue-600 font-semibold">Login</Link>
+            <Link href="/login" className="bg-blue-50 text-blue-600 px-4 py-2 rounded-lg font-bold hover:bg-blue-100 transition">
+              Login
+            </Link>
           )}
           
           <button 
