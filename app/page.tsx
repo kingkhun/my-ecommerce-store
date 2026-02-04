@@ -172,20 +172,14 @@ export default function Home() {
           <h6 className="text-gray-600 italic">Built with Supabase + Next.js</h6>
           {user ? (
             <div className="flex items-center gap-4">
-              <span className="text-sm font-medium text-gray-700 bg-gray-100 px-3 py-1 rounded-full">
-                👤 {user.email}
-              </span>
-              <button 
-                onClick={() => supabase.auth.signOut()}
-                className="text-sm text-red-500 hover:text-red-700 font-semibold transition"
-              >
-                Logout
-              </button>
+              <Link href="/orders" className="text-sm font-semibold text-blue-600 hover:text-blue-800">
+                My Orders
+              </Link>
+              <span className="text-sm text-gray-600">Hi, {user.email}</span>
+              <button onClick={() => supabase.auth.signOut()} className="text-sm text-red-500">Logout</button>
             </div>
           ) : (
-            <Link href="/login" className="bg-blue-50 text-blue-600 px-4 py-2 rounded-lg font-bold hover:bg-blue-100 transition">
-              Login
-            </Link>
+            <Link href="/login">Login</Link>
           )}
           
           <button 
