@@ -17,6 +17,7 @@ interface Product {
   price: number;
   image_url: string;
   description: string;
+  stock: number;
 }
 
 export default function AdminPage() {
@@ -118,7 +119,7 @@ function OrderManagerSection() {
 // --- SUB-SECTION: PRODUCT MANAGER ---
 function ProductManagerSection() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [form, setForm] = useState({ name: '', price: '', image_url: '', description: '' });
+  const [form, setForm] = useState({ name: '', price: '', stock: 0, description: '', image_url: '' });
 
   useEffect(() => { fetchProducts(); }, []);
 
@@ -131,7 +132,7 @@ function ProductManagerSection() {
     e.preventDefault();
     const { error } = await supabase.from('products').insert([{ ...form, price: parseFloat(form.price) }]);
     if (!error) {
-      setForm({ name: '', price: '', image_url: '', description: '' });
+      setForm({ name: '', price: '', stock: 0, description: '', image_url: ''  });
       fetchProducts();
     }
   }
@@ -149,6 +150,8 @@ function ProductManagerSection() {
       <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <input type="text" placeholder="Name" className="p-2 border rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
         <input type="number" placeholder="Price" className="p-2 border rounded" value={form.price} onChange={e => setForm({...form, price: e.target.value})} required />
+        <input type="number" placeholder="Stock" className="p-2 border rounded" value={form.stock} onChange={e => setForm({...form, stock: parseInt(e.target.value) || 0})} required />
+        <input type="text" placeholder="Description" className="p-2 border rounded md:col-span-2" value={form.description} onChange={e => setForm({...form, description: e.target.value})} required />
         <input type="text" placeholder="Image URL" className="p-2 border rounded md:col-span-2" value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})} required />
         <button type="submit" className="md:col-span-2 bg-black text-white py-3 rounded-xl font-bold">Add Laptop</button>
       </form>
