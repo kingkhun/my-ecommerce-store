@@ -11,6 +11,7 @@ interface Product {
   description: string;
   image_url: string;
   category: string; 
+  stock_quantity: number; // NEW FIELD FOR STOCK
 }
 // MAIN COMPONENT
 export default function Home() {

@@ -1,3 +1,4 @@
+//Product Detail Page - Displays detailed information about a single product and allows adding it to the cart.
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
@@ -11,6 +12,7 @@ interface Product {
   description: string;
   image_url: string;
   category: string;
+  stock_quantity: number;
 }
 // Product Detail Page Component
 export default function ProductDetail() {
@@ -81,7 +83,7 @@ export default function ProductDetail() {
             <p className="text-gray-600 text-lg leading-relaxed mb-8">
               {product.description}
             </p>
-            
+            <p className="text-sm text-gray-500 mb-6">Stock: {product.stock_quantity}</p>
             <button 
               onClick={handleAddToCart}
               className="bg-blue-600 text-white text-xl font-bold py-5 rounded-2xl hover:bg-blue-700 transition active:scale-95"
