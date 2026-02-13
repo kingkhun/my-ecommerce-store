@@ -130,12 +130,53 @@ function ProductManagerSection() {
     if (data) setProducts(data);
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.FormEvent) { /*
     e.preventDefault();
     const { error } = await supabase.from('products').insert([{ ...form, price: parseFloat(form.price), stock_quantity: parseInt(form.stock_quantity.toString()) }]);
     if (!error) {
       setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: ''  });
       fetchProducts();
+    } */
+
+    e.preventDefault();
+    setUploading(true);
+    let publicUrl = '';
+
+      try {
+        if (selectedFile) {
+          // 1. Upload file to Supabase Storage
+          const fileExt = selectedFile.name.split('.').pop();
+          const fileName = `${Math.random()}.${fileExt}`;
+          const filePath = `laptops/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('product-images')
+            .upload(filePath, selectedFile);
+
+          if (uploadError) throw uploadError;
+
+          // 2. Get the Public URL
+          const { data: urlData } = supabase.storage
+            .from('product-images')
+            .getPublicUrl(filePath);
+          
+          publicUrl = urlData.publicUrl;
+        }
+
+        // 3. Save Product to Database
+        const { error } = await supabase.from('products').insert([
+          { ...form, price: parseFloat(form.price), image_url: publicUrl }
+        ]);
+
+        if (!error) {
+          setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '' });
+          setSelectedFile(null);
+          fetchProducts();
+        }
+      } catch (err: any) {
+        alert(err.message);
+      } finally {
+        setUploading(false);
     }
   }
 
@@ -154,9 +195,16 @@ function ProductManagerSection() {
         <input type="number" placeholder="Price" className="p-2 border rounded" value={form.price} onChange={e => setForm({...form, price: e.target.value})} required />
         <input type="number" placeholder="Stock Quantity" className="p-2 border rounded" value={form.stock_quantity} onChange={e => setForm({...form, stock_quantity: parseInt(e.target.value) || 0})} required />
         <input type="text" placeholder="Description" className="p-2 border rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} required />
-        <input type="text" placeholder="Image URL" className="p-2 border rounded md:col-span-2" value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})} required />
-        <button type="submit" className="md:col-span-2 bg-black text-white py-3 rounded-xl font-bold">Add Laptop</button>
-      </form>
+         <div className="md:col-span-2">
+          <label className="block text-sm text-gray-500 mb-1">Laptop Photo</label>
+          <input type="file" accept="image/*" className="w-full p-2 border border-dashed rounded-xl"
+            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} required />
+        </div>
+        <button type="submit" disabled={uploading} className="md:col-span-2 bg-black text-white py-3 rounded-xl font-bold disabled:bg-gray-400">
+          {uploading ? 'Uploading...' : 'Add Laptop with Photo'}
+        </button>
+        
+         </form>
 
       <div className="grid gap-4">
         {products.map(p => (
