@@ -12,12 +12,19 @@ interface Product {
   image_url: string;
   category: string; 
   stock_quantity: number; // NEW FIELD FOR STOCK
+  
 }
+
+interface CartItem extends Product {
+  SoldQuantity: number;
+  }
+
+
 // MAIN COMPONENT
 export default function Home() {
   // STATE VARIABLES
   const [products, setProducts] = useState<Product[]>([]); // ALL PRODUCTS FROM SUPABASE
-  const [cart, setCart] = useState<Product[]>([]); // SHOPPING CART
+  const [cart, setCart] = useState<CartItem[]>([]); // SHOPPING CART
   const [isCartOpen, setIsCartOpen] = useState(false); // CART SIDEBAR VISIBILITY
   const [mounted, setMounted] = useState(false); // TO CHECK IF COMPONENT IS MOUNTED
   const [searchQuery, setSearchQuery] = useState(''); // SEARCH QUERY
@@ -50,12 +57,33 @@ export default function Home() {
       localStorage.setItem('my_ecommerce_cart', JSON.stringify(cart));
     }
   }, [cart, mounted]);
+
+  
   // TOTAL PRICE CALCULATION
-  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
+  const totalPrice = cart.reduce((sum, item) => sum + item.price * (item.SoldQuantity ?? 1), 0);
   // ADD TO CART
   const addToCart = (product: Product) => {
-    setCart([...cart, product]);
+    setCart((prevCart) => {
+      const existingItem = prevCart.find((item) => item.id === product.id);
+      
+      if (existingItem) {
+        // SAFETY: Check if they are trying to buy more than we have
+        if ((existingItem.SoldQuantity ?? 0) + 1 > product.stock_quantity) {
+          alert(`Only ${product.stock_quantity} units available in stock!`);
+          return prevCart;
+        }
+
+        return prevCart.map((item) =>
+          item.id === product.id
+            ? { ...item, SoldQuantity: (item.SoldQuantity ?? 0) + 1 }
+            : item
+        );
+      } else {
+        return [...prevCart, { ...product, SoldQuantity: 1 }];
+      }
+    });
     setIsCartOpen(true);
+      
   };
   // REMOVE FROM CART BY INDEX
   const removeFromCart = (index: number) => {
@@ -82,10 +110,6 @@ export default function Home() {
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  /*
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ); */
 
   // CATEGORIES
   const categories = ['All', 'Gaming', 'Business', 'UltraBook'];
@@ -96,10 +120,9 @@ export default function Home() {
   return matchesSearch && matchesCategory;
   });
 
-  
-  // CHECKOUT FUNCTION
+
   const handleCheckout = async () => {
-  if (cart.length === 0) return alert("Your cart is empty!");
+    if (cart.length === 0) return alert("Your cart is empty!");
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -110,19 +133,18 @@ export default function Home() {
         return;
       }
 
-      // NEW: Verify the profile exists before inserting order
+      // 1. Profile Verification
       const { data: profile } = await supabase
         .from('profiles')
         .select('id')
         .eq('id', user.id)
         .single();
 
-        if (!profile) {
-          // If trigger failed, create profile manually on the fly
-          await supabase.from('profiles').insert([{ id: user.id, full_name: user.email }]);
-        }
+      if (!profile) {
+        await supabase.from('profiles').insert([{ id: user.id, full_name: user.email }]);
+      }
 
-      // Now proceed with the order insertion as you had it...
+      // 2. Insert Order
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([{ 
@@ -135,31 +157,56 @@ export default function Home() {
 
       if (orderError) throw orderError;
 
-      // 4. Prepare items for 'order_items' table
+      // 3. Prepare and Insert Order Items
       const orderItems = cart.map((item) => ({
         order_id: orderData.id,
         product_id: item.id,
-        quantity: 1, 
+        quantity: item.SoldQuantity ?? 1, 
         price_at_purchase: item.price
       }));
 
-      // 5. Insert into 'order_items'
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItems);
-
+      const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
       if (itemsError) throw itemsError;
 
-      // 6. Success UI
+      // 4. DEDUCT STOCK
+      for (const item of cart) {
+        // 1. Get the latest stock directly from the database to be safe
+        const { data: currentProduct } = await supabase
+          .from('products')
+          .select('stock_quantity')
+          .eq('id', item.id)
+          .single();
+
+        if (currentProduct) {
+          const amountBought = item.SoldQuantity || 1;
+          const newStockLevel = currentProduct.stock_quantity - amountBought;
+
+          // 2. Update with the calculated number
+          const { error: stockError } = await supabase
+            .from('products')
+            .update({ stock_quantity: newStockLevel })
+            .eq('id', item.id);
+            
+          if (stockError) {
+            console.error(`Error updating ${item.name}:`, stockError.message);
+          } else {
+            console.log(`Successfully updated ${item.name} to ${newStockLevel}`);
+          }
+        }
+      }
+      // 5. Success UI
       setLastOrderId(orderData.id); 
       setShowSuccess(true);         
       setCart([]);                  
       setIsCartOpen(false);         
       localStorage.removeItem('my_ecommerce_cart');
+      // Refresh product list so the UI shows the new stock counts immediately
+      const { data: refreshedProducts } = await supabase.from('products').select('*');
+      if (refreshedProducts) setProducts(refreshedProducts);
 
     } catch (error: any) {
       console.error("Checkout failed:", error.message);
-      alert("Something went wrong with your order.");
+      alert("Something went wrong with your order.");    
     }
   };
 
@@ -213,6 +260,7 @@ export default function Home() {
                       <div>
                         <h4 className="font-semibold text-gray-800">{item.name}</h4>
                         <p className="text-blue-600 font-bold">${item.price}</p>
+                        <p className="text-xs text-gray-500">Qty: {item.SoldQuantity ?? 1}</p>
                       </div>
                     </div>
                     <button onClick={() => removeFromCart(index)} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
@@ -299,6 +347,12 @@ export default function Home() {
                     <h3 className="text-xl font-bold line-clamp-1 group-hover:text-blue-600 transition-colors">
                       {product.name}
                     </h3>
+                    <span className={`text-xs px-2 py-1 rounded-md font-bold ${
+                      product.stock_quantity > 0 ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600'
+                    }`
+                    }>
+                      {product.stock_quantity > 0 ? `${product.stock_quantity} in stock` : 'Out of Stock'}
+                    </span>
                     <span className="text-green-600 font-bold text-lg">${product.price}</span>
                   </div>
                   <p className="text-gray-500 text-sm mb-6 leading-relaxed line-clamp-2">
@@ -310,6 +364,7 @@ export default function Home() {
               {/* 2. Keep the Button OUTSIDE the Link */}
               <div className="px-6 pb-6">
                 <button 
+                  disabled={product.stock_quantity <= 0}
                   onClick={() => addToCart(product)}
                   className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition active:scale-95"
                 >
@@ -321,13 +376,6 @@ export default function Home() {
           ))}
         </div>
         
-        {/*
-        {filteredProducts.length === 0 && (
-          <div className="text-center py-20">
-            <div className="text-5xl mb-4 text-gray-300 italic">Empty!</div>
-            <p className="text-gray-500">No products found matching "{searchQuery}"</p>
-          </div>
-        )} */}
         {filteredProducts.length === 0 && (
         <div className="text-center py-20 text-gray-500">
           <p className="text-xl italic">Oops! No {activeCategory !== 'All' ? activeCategory : ''} laptops found matching "{searchQuery}"</p>

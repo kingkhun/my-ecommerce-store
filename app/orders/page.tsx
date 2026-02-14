@@ -1,3 +1,4 @@
+// This is the page where users can view their past orders and click on them to see details. It uses a modal to show the items in each order without navigating away from the list.
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
