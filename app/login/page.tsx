@@ -17,13 +17,17 @@ export default function LoginPage() {
     setLoading(false);
   };
 
+  // Handle login with email and password
+
   const handleLogin = async () => {
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    
     if (error) alert(error.message);
     else router.push('/'); // Go back home after login
     setLoading(false);
   };
+  
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -54,6 +58,12 @@ export default function LoginPage() {
           >
             Don't have an account? Sign Up
           </button>
+          
+          
+          
+          
+          
+          
         </div>
       </div>
     </div>

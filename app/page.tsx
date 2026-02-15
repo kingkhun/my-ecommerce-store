@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 interface Product {
   id: string;
