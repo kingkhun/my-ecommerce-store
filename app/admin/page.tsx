@@ -18,6 +18,7 @@ interface Product {
   image_url: string;
   description: string;
   stock_quantity: number;
+  store_id?: string;
 }
 
 export default function AdminPage() {
@@ -119,11 +120,11 @@ function OrderManagerSection() {
 // --- SUB-SECTION: PRODUCT MANAGER ---
 function ProductManagerSection() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [form, setForm] = useState({ name: '', price: '', stock_quantity: 0, description: '', image_url: '' });
+  const [form, setForm] = useState({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-
+  
 
   useEffect(() => { fetchProducts(); }, []);
 
@@ -131,8 +132,6 @@ function ProductManagerSection() {
     const { data } = await supabase.from('products').select('*').order('name');
     if (data) setProducts(data);
   }
-
-
 
   async function handleAdd(e: React.FormEvent) {
 
@@ -167,7 +166,7 @@ function ProductManagerSection() {
         ]);
 
         if (!error) {
-          setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '' });
+          setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
           setSelectedFile(null);
           fetchProducts();
         }
@@ -193,7 +192,8 @@ function ProductManagerSection() {
       price: product.price.toString(),
       stock_quantity: product.stock_quantity,
       description: product.description,
-      image_url: product.image_url
+      image_url: product.image_url,
+      store_id: product.store_id || '',
     });
     // Scroll to top of form
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -233,7 +233,7 @@ function ProductManagerSection() {
       }
 
       // Reset everything
-      setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '' });
+      setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
       setSelectedFile(null);
       setEditingId(null);
       fetchProducts();
@@ -243,43 +243,6 @@ function ProductManagerSection() {
       setUploading(false);
     }
   }
-  /*
-  return (
-    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-      <h2 className="text-2xl font-bold mb-6">Inventory Management</h2>
-      <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        <input type="text" placeholder="Name" className="p-2 border rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
-        <input type="number" placeholder="Price" className="p-2 border rounded" value={form.price} onChange={e => setForm({...form, price: e.target.value})} required />
-        <input type="number" placeholder="Stock Quantity" className="p-2 border rounded" value={form.stock_quantity} onChange={e => setForm({...form, stock_quantity: parseInt(e.target.value) || 0})} required />
-        <input type="text" placeholder="Description" className="p-2 border rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} required />
-         <div className="md:col-span-2">
-          <label className="block text-sm text-gray-500 mb-1">Laptop Photo</label>
-          <input type="file" accept="image/*" className="w-full p-2 border border-dashed rounded-xl"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} required />
-        </div>
-        <button type="submit" disabled={uploading} className="md:col-span-2 bg-black text-white py-3 rounded-xl font-bold disabled:bg-gray-400">
-          {uploading ? 'Uploading...' : 'Add Laptop with Photo'}
-        </button>
-        
-      </form>
-
-      <div className="grid gap-4">
-        {products.map(p => (
-          <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
-            <div className="flex items-center gap-3">
-              <img src={p.image_url} className="w-10 h-10 object-cover rounded" alt="" />
-              <p className="font-semibold">{p.name} - ${p.price}</p>
-            </div>
-            <button onClick={() => handleDelete(p.id)} className="text-red-500 text-sm">Delete</button>
-          </div>
-        ))}
-      </div>
-
-
-    </div>
-
-
-  );*/
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
       <h2 className="text-2xl font-bold mb-2">Inventory Management</h2>
@@ -291,6 +254,7 @@ function ProductManagerSection() {
         <input type="number" placeholder="Stock Quantity" className="p-2 border rounded" value={form.stock_quantity} onChange={e => setForm({...form, stock_quantity: parseInt(e.target.value) || 0})} required />
         <input type="text" placeholder="Description" className="p-2 border rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} required />
         
+
         <div className="md:col-span-2">
           <label className="block text-sm text-gray-500 mb-1">Laptop Photo (Leave empty to keep current)</label>
           <input type="file" accept="image/*" className="w-full p-2 border border-dashed rounded-xl bg-white"
@@ -303,7 +267,7 @@ function ProductManagerSection() {
           </button>
           
           {editingId && (
-            <button type="button" onClick={() => {setEditingId(null); setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '' });}} className="px-6 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold">
+            <button type="button" onClick={() => {setEditingId(null); setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });}} className="px-6 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold">
               Cancel
             </button>
           )}

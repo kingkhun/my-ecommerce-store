@@ -5,6 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
+interface Store {
+  id: string;
+  name: string;
+  owner_id: string;
+  description?: string;
+  logo_url?: string;
+}
+
 interface Product {
   id: string;
   name: string;
@@ -12,8 +20,9 @@ interface Product {
   description: string;
   image_url: string;
   category: string; 
-  stock_quantity: number; // NEW FIELD FOR STOCK
-  
+  stock_quantity: number;
+  store_id: string; // NEW FIELD
+  stores?: Store;   // For when we join tables in a query
 }
 
 interface CartItem extends Product {
@@ -46,7 +55,8 @@ export default function Home() {
     }
     // FETCH PRODUCTS FROM SUPABASE
     async function getProducts() {
-      const { data, error } = await supabase.from('products').select('*');
+      const { data, error } = await supabase.from('products').select(`
+      *, stores (name) `);
       if (error) console.error("Supabase Error:", error.message);
       if (data) setProducts(data);
     }
@@ -329,6 +339,8 @@ export default function Home() {
               {/* 1. Wrap the Image and Info in a Link */}
               <Link href={`/product/${product.id}`} className="flex-1 flex flex-col group">
                 
+                {/* Inside your product mapping */}
+                  
                 {/* IMAGE SECTION */}
                 <div className="h-56 w-full relative bg-gray-100 overflow-hidden">
                   {product.image_url ? (
@@ -341,6 +353,15 @@ export default function Home() {
                     <div className="w-full h-full flex items-center justify-center text-gray-400 italic">No image found</div>
                   )}
                 </div>
+                <div className="flex flex-col">
+                    {product.stores && (
+                      <span className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-1">
+                        📍 Sold by: {product.stores.name}
+                      </span>
+                    )}
+                    
+                  </div>
+                
                 
                 {/* TEXT CONTENT */}
                 <div className="p-6 flex flex-col flex-1">
