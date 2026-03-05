@@ -1,3 +1,24 @@
+import "./globals.css";
+// 1. Import the Provider you just created
+import { CartProvider } from '@/app/context/CartContext'; 
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body>
+        {/* 2. Wrap the children so every page has access to the cart */}
+        <CartProvider>
+          {children}
+        </CartProvider>
+      </body>
+    </html>
+  );
+}
+/*
 import "./globals.css"; // Make sure this line exists!
 
 export default function RootLayout({
@@ -10,4 +31,5 @@ export default function RootLayout({
       <body>{children}</body>
     </html>
   )
-}
+} */
+

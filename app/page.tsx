@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { useCart} from '@/app/context/CartContext';
 
 interface Store {
   id: string;
@@ -34,7 +35,7 @@ interface CartItem extends Product {
 export default function Home() {
   // STATE VARIABLES
   const [products, setProducts] = useState<Product[]>([]); // ALL PRODUCTS FROM SUPABASE
-  const [cart, setCart] = useState<CartItem[]>([]); // SHOPPING CART
+  //const [cart, setCart] = useState<CartItem[]>([]); // SHOPPING CART
   const [isCartOpen, setIsCartOpen] = useState(false); // CART SIDEBAR VISIBILITY
   const [mounted, setMounted] = useState(false); // TO CHECK IF COMPONENT IS MOUNTED
   const [searchQuery, setSearchQuery] = useState(''); // SEARCH QUERY
@@ -42,182 +43,83 @@ export default function Home() {
   const [showSuccess, setShowSuccess] = useState(false); // ORDER SUCCESS MESSAGE
   const [lastOrderId, setLastOrderId] = useState<string | null>(null); // LAST ORDER ID
   const router = useRouter();
+  const { cart, addToCart, removeFromCart, totalPrice, clearCart } = useCart();
+  const [user, setUser] = useState<any>(null);
   // INITIAL LOAD
   useEffect(() => {
     setMounted(true);
-    const savedCart = localStorage.getItem('my_ecommerce_cart');
-    if (savedCart) {
-      try {
-        setCart(JSON.parse(savedCart));
-      } catch (e) {
-        console.error("Failed to parse cart", e);
-      }
-    }
-    // FETCH PRODUCTS FROM SUPABASE
+    // FETCH PRODUCTS
     async function getProducts() {
-      const { data, error } = await supabase.from('products').select(`
-      *, stores (name) `);
+      const { data, error } = await supabase.from('products').select(`*, stores (name)`);
       if (error) console.error("Supabase Error:", error.message);
       if (data) setProducts(data);
     }
     getProducts();
-  }, []);
-  // SYNC CART TO LOCALSTORAGE
-  useEffect(() => {
-    if (mounted) {
-      localStorage.setItem('my_ecommerce_cart', JSON.stringify(cart));
-    }
-  }, [cart, mounted]);
 
-  
-  // TOTAL PRICE CALCULATION
-  const totalPrice = cart.reduce((sum, item) => sum + item.price * (item.SoldQuantity ?? 1), 0);
-  // ADD TO CART
-  const addToCart = (product: Product) => {
-    setCart((prevCart) => {
-      const existingItem = prevCart.find((item) => item.id === product.id);
-      
-      if (existingItem) {
-        // SAFETY: Check if they are trying to buy more than we have
-        if ((existingItem.SoldQuantity ?? 0) + 1 > product.stock_quantity) {
-          alert(`Only ${product.stock_quantity} units available in stock!`);
-          return prevCart;
-        }
-
-        return prevCart.map((item) =>
-          item.id === product.id
-            ? { ...item, SoldQuantity: (item.SoldQuantity ?? 0) + 1 }
-            : item
-        );
-      } else {
-        return [...prevCart, { ...product, SoldQuantity: 1 }];
-      }
-    });
-    setIsCartOpen(true);
-      
-  };
-  // REMOVE FROM CART BY INDEX
-  const removeFromCart = (index: number) => {
-    const newCart = cart.filter((_, i) => i !== index); // A cleaner way to remove by index
-    setCart(newCart);
-  };
-
-  // USER AUTH STATE
-  const [user, setUser] = useState<any>(null);
-  // AUTH STATE LISTENER
-  useEffect(() => {
-    // Check current user session
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    getUser();
-
-    // Listen for login/logout changes
+    // AUTH LISTENER
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
     });
-
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-
-  // CATEGORIES
   const categories = ['All', 'Gaming', 'Business', 'UltraBook'];
-  // FILTERED PRODUCTS BASED ON SEARCH AND CATEGORY
+  
   const filteredProducts = products.filter((product) => {
-  const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-  const matchesCategory = activeCategory === 'All' || product.category === activeCategory;
-  return matchesSearch && matchesCategory;
+    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = activeCategory === 'All' || product.category === activeCategory;
+    return matchesSearch && matchesCategory;
   });
 
-
+  // Updated handleCheckout using clearCart()
   const handleCheckout = async () => {
     if (cart.length === 0) return alert("Your cart is empty!");
-
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
       if (!user) {
         alert("Please login to place an order!");
         router.push('/login');
         return;
       }
 
-      // 1. Profile Verification
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .single();
+      // 1. Profile check
+      const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).single();
+      if (!profile) await supabase.from('profiles').insert([{ id: user.id, full_name: user.email }]);
 
-      if (!profile) {
-        await supabase.from('profiles').insert([{ id: user.id, full_name: user.email }]);
-      }
-
-      // 2. Insert Order
+      // 2. Create Order
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
-        .insert([{ 
-          user_id: user.id, 
-          total_price: totalPrice, 
-          status: 'pending' 
-        }])
-        .select()
-        .single();
-
+        .insert([{ user_id: user.id, total_price: totalPrice, status: 'pending' }])
+        .select().single();
       if (orderError) throw orderError;
 
-      // 3. Prepare and Insert Order Items
+      // 3. Insert Items
       const orderItems = cart.map((item) => ({
         order_id: orderData.id,
         product_id: item.id,
         quantity: item.SoldQuantity ?? 1, 
         price_at_purchase: item.price
       }));
+      await supabase.from('order_items').insert(orderItems);
 
-      const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
-      if (itemsError) throw itemsError;
-
-      // 4. DEDUCT STOCK
+      // 4. Update Stock
       for (const item of cart) {
-        // 1. Get the latest stock directly from the database to be safe
-        const { data: currentProduct } = await supabase
-          .from('products')
-          .select('stock_quantity')
-          .eq('id', item.id)
-          .single();
-
-        if (currentProduct) {
-          const amountBought = item.SoldQuantity || 1;
-          const newStockLevel = currentProduct.stock_quantity - amountBought;
-
-          // 2. Update with the calculated number
-          const { error: stockError } = await supabase
-            .from('products')
-            .update({ stock_quantity: newStockLevel })
-            .eq('id', item.id);
-            
-          if (stockError) {
-            console.error(`Error updating ${item.name}:`, stockError.message);
-          } else {
-            console.log(`Successfully updated ${item.name} to ${newStockLevel}`);
-          }
+        const { data: cur } = await supabase.from('products').select('stock_quantity').eq('id', item.id).single();
+        if (cur) {
+          await supabase.from('products').update({ stock_quantity: cur.stock_quantity - (item.SoldQuantity || 1) }).eq('id', item.id);
         }
       }
-      // 5. Success UI
-      setLastOrderId(orderData.id); 
-      setShowSuccess(true);         
-      setCart([]);                  
-      setIsCartOpen(false);         
-      localStorage.removeItem('my_ecommerce_cart');
-      // Refresh product list so the UI shows the new stock counts immediately
-      const { data: refreshedProducts } = await supabase.from('products').select('*');
-      if (refreshedProducts) setProducts(refreshedProducts);
 
-    } catch (error: any) {
-      console.error("Checkout failed:", error.message);
-      alert("Something went wrong with your order.");    
+      // SUCCESS
+      setLastOrderId(orderData.id); 
+      setShowSuccess(true);
+      clearCart(); // <--- THIS CLEARS CONTEXT
+      setIsCartOpen(false);
+      
+      const { data: refresh } = await supabase.from('products').select('*');
+      if (refresh) setProducts(refresh);
+    } catch (e: any) {
+      alert("Checkout failed: " + e.message);
     }
   };
 
@@ -333,70 +235,56 @@ export default function Home() {
           {searchQuery ? `Results for "${searchQuery}"` : "Featured Gear"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredProducts.map((product) => (
-            <div key={product.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition flex flex-col">
-              
-              {/* 1. Wrap the Image and Info in a Link */}
-              <Link href={`/product/${product.id}`} className="flex-1 flex flex-col group">
-                
-                {/* Inside your product mapping */}
-                  
-                {/* IMAGE SECTION */}
-                <div className="h-56 w-full relative bg-gray-100 overflow-hidden">
-                  {product.image_url ? (
-                    <img 
-                      src={product.image_url} 
-                      alt={product.name} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400 italic">No image found</div>
-                  )}
-                </div>
-                <div className="flex flex-col">
-                    {product.stores && (
-                      <span className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-1">
-                        📍 Sold by: {product.stores.name}
-                      </span>
-                    )}
-                    
-                  </div>
-                
-                
-                {/* TEXT CONTENT */}
-                <div className="p-6 flex flex-col flex-1">
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-xl font-bold line-clamp-1 group-hover:text-blue-600 transition-colors">
-                      {product.name}
-                    </h3>
-                    <span className={`text-xs px-2 py-1 rounded-md font-bold ${
-                      product.stock_quantity > 0 ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600'
-                    }`
-                    }>
-                      {product.stock_quantity > 0 ? `${product.stock_quantity} in stock` : 'Out of Stock'}
-                    </span>
-                    <span className="text-green-600 font-bold text-lg">${product.price}</span>
-                  </div>
-                  <p className="text-gray-500 text-sm mb-6 leading-relaxed line-clamp-2">
-                    {product.description}
-                  </p>
-                </div>
-              </Link>
-
-              {/* 2. Keep the Button OUTSIDE the Link */}
-              <div className="px-6 pb-6">
-                <button 
-                  disabled={product.stock_quantity <= 0}
-                  onClick={() => addToCart(product)}
-                  className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition active:scale-95"
-                >
-                  Add to Cart
-                </button>
+        {filteredProducts.map((product) => (
+          <div key={product.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition flex flex-col">
+            
+            {/* Top Part is a Link to Details */}
+            <Link href={`/product/${product.id}`} className="group flex-1">
+              <div className="h-56 w-full relative bg-gray-100 overflow-hidden">
+                <img 
+                  src={product.image_url} 
+                  alt={product.name} 
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                />
               </div>
               
+              <div className="p-6">
+                {product.stores && (
+                  <span className="text-xs font-semibold text-orange-500 uppercase tracking-wider block mb-2">
+                    💥 Sold by: {product.stores.name}
+                  </span>
+                )}
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="text-xl font-bold line-clamp-1 group-hover:text-blue-600 transition-colors">
+                    {product.name}
+                  </h3>
+                  <span className="text-green-600 font-bold text-lg">${product.price}</span>
+                </div>
+                <p className="text-gray-500 text-sm line-clamp-2 mb-4">{product.description}</p>
+              </div>
+            </Link>
+
+            {/* Bottom Part (Store Link & Button) is SEPARATE from the detail link */}
+            <div className="px-6 pb-6 mt-auto">
+              <div className="mb-4">
+                <Link 
+                  href={`/store/${product.store_id}`} 
+                  className="text-xs text-blue-600 hover:underline font-medium"
+                >
+                  Visit Seller Store →
+                </Link>
+              </div>
+              <button 
+                disabled={product.stock_quantity <= 0}
+                onClick={() => addToCart(product)}
+                className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition active:scale-95 disabled:bg-gray-300"
+              >
+                {product.stock_quantity > 0 ? 'Add to Cart' : 'Out of Stock'}
+              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
         
         {filteredProducts.length === 0 && (
         <div className="text-center py-20 text-gray-500">
@@ -444,7 +332,7 @@ export default function Home() {
           <div>
             <h3 className="text-xl font-bold mb-4">Contact Us</h3>
             <p className="text-gray-300">📞 Phone: +1 (555) 123-4567</p>
-            <p className="text-gray-300">✉️ Email: support@laptopstore.com</p>
+            <p className="text-gray-300">✉️ Email: hdcs@sum.com</p>
           </div>
           <div>
             <h3 className="text-xl font-bold mb-4">Follow Us</h3>

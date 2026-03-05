@@ -21,27 +21,51 @@ interface Product {
   store_id?: string;
 }
 
+interface Store {
+  id: string;
+  name: string;
+  owner_id: string;
+  description?: string;
+  logo_url?: string;
+}
+
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [myStoreId, setMyStoreId] = useState<string | null>(null); // Added this state
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const ADMIN_EMAIL = "maungbamar55@gmail.com"; // CHANGE THIS
-
   useEffect(() => {
-    async function checkUser() {
+    async function checkVendorStatus() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || user.email !== ADMIN_EMAIL) {
-        router.push('/');
+      
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      // We check if this specific user owns a store in the 'stores' table
+      const { data: store, error } = await supabase
+        .from('stores')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (error || !store) {
+        // No store found? Send them to create one!
+        router.push('/setup-store');
       } else {
+        // Store found! They are allowed in.
         setIsAdmin(true);
+        setMyStoreId(store.id); 
       }
       setLoading(false);
     }
-    checkUser();
+    
+    checkVendorStatus();
   }, [router]);
 
-  if (loading) return <div className="p-20 text-center text-xl font-bold">Verifying Admin Status...</div>;
+  if (loading) return <div className="p-20 text-center">Verifying Store Access...</div>;
   if (!isAdmin) return null;
 
   return (
@@ -49,16 +73,15 @@ export default function AdminPage() {
       <div className="max-w-6xl mx-auto space-y-12">
         <h1 className="text-4xl font-black text-gray-900">Admin Control Center</h1>
         
-        {/* We call our two sections here */}
-        <OrderManagerSection />
-        <ProductManagerSection />
+        <OrderManagerSection storeId={myStoreId} />
+        <ProductManagerSection storeId={myStoreId} />
       </div>
     </div>
   );
 }
 
 // --- SUB-SECTION: ORDER MANAGER ---
-function OrderManagerSection() {
+function OrderManagerSection({ storeId }: { storeId: string | null }) {
   const [orders, setOrders] = useState<Order[]>([]);
 
   useEffect(() => { fetchOrders(); }, []);
@@ -118,7 +141,7 @@ function OrderManagerSection() {
 }
 
 // --- SUB-SECTION: PRODUCT MANAGER ---
-function ProductManagerSection() {
+function ProductManagerSection({ storeId }: { storeId: string | null }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [form, setForm] = useState({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
   const [uploading, setUploading] = useState(false);
@@ -128,54 +151,73 @@ function ProductManagerSection() {
 
   useEffect(() => { fetchProducts(); }, []);
 
-  async function fetchProducts() {
-    const { data } = await supabase.from('products').select('*').order('name');
-    if (data) setProducts(data);
-  }
+  // Inside ProductManagerSection
+async function fetchProducts() {
+  const { data } = await supabase
+    .from('products')
+    .select('*')
+    .eq('store_id', storeId) // ONLY get products for this shop!
+    .order('name');
+  if (data) setProducts(data);
+  }  
 
-  async function handleAdd(e: React.FormEvent) {
-
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setUploading(true);
-    let publicUrl = '';
-
-      try {
-        if (selectedFile) {
-          // 1. Upload file to Supabase Storage
-          const fileExt = selectedFile.name.split('.').pop();
-          const fileName = `${Math.random()}.${fileExt}`;
-          const filePath = `laptops/${fileName}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from('product-images')
-            .upload(filePath, selectedFile);
-
-          if (uploadError) throw uploadError;
-
-          // 2. Get the Public URL
-          const { data: urlData } = supabase.storage
-            .from('product-images')
-            .getPublicUrl(filePath);
-          
-          publicUrl = urlData.publicUrl;
-        }
-
-        // 3. Save Product to Database
-        const { error } = await supabase.from('products').insert([
-          { ...form, price: parseFloat(form.price), image_url: publicUrl }
-        ]);
-
-        if (!error) {
-          setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
-          setSelectedFile(null);
-          fetchProducts();
-        }
-      } catch (err: any) {
-        alert(err.message);
-      } finally {
-        setUploading(false);
+    if (!storeId) {
+      alert("Store ID missing. Please refresh.");
+      return;
     }
+    
+    setUploading(true);
+    let finalImageUrl = form.image_url;
+
+    try {
+      // 1. Image Upload Logic (remains the same as before)
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `laptops/${fileName}`;
+        const { error: uploadError } = await supabase.storage.from('product-images').upload(filePath, selectedFile);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(filePath);
+        finalImageUrl = urlData.publicUrl;
+      }
+
+      // 2. Prepare the Data Object
+      const productData = { 
+        ...form, 
+        price: parseFloat(form.price), 
+        image_url: finalImageUrl,
+        store_id: storeId // <--- CRITICAL: This links the product to the store
+      };
+
+      if (editingId) {
+        // UPDATE EXISTING
+        const { error } = await supabase.from('products').update(productData).eq('id', editingId);
+        if (error) throw error;
+      } 
+      
+      else {
+        // INSERT NEW
+        const { error } = await supabase.from('products').insert([productData]);
+        if (error) throw error;
+      }
+      // Inside handleSave, after the if(editingId) block:
+            
+    } 
+    
+    // Inside handleSave, after the if(editingId) block:
+    
+     
+    catch (err: any) {
+      alert(err.message);
+    } 
+    finally {
+      setUploading(false);
+    }
+    
   }
+  
 
   async function handleDelete(id: string) {
     if (confirm("Delete this product?")) {
@@ -199,50 +241,6 @@ function ProductManagerSection() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    setUploading(true);
-    let finalImageUrl = form.image_url;
-
-    try {
-      // 1. Handle Image Upload only if a new file is selected
-      if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `laptops/${fileName}`;
-        const { error: uploadError } = await supabase.storage.from('product-images').upload(filePath, selectedFile);
-        if (uploadError) throw uploadError;
-        const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(filePath);
-        finalImageUrl = urlData.publicUrl;
-      }
-
-      const productData = { 
-        ...form, 
-        price: parseFloat(form.price), 
-        image_url: finalImageUrl 
-      };
-
-      if (editingId) {
-        // UPDATE EXISTING
-        const { error } = await supabase.from('products').update(productData).eq('id', editingId);
-        if (error) throw error;
-      } else {
-        // INSERT NEW
-        const { error } = await supabase.from('products').insert([productData]);
-        if (error) throw error;
-      }
-
-      // Reset everything
-      setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
-      setSelectedFile(null);
-      setEditingId(null);
-      fetchProducts();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setUploading(false);
-    }
-  }
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
       <h2 className="text-2xl font-bold mb-2">Inventory Management</h2>
