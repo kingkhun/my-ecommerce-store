@@ -84,10 +84,50 @@ export default function AdminPage() {
 function OrderManagerSection({ storeId }: { storeId: string | null }) {
   const [orders, setOrders] = useState<Order[]>([]);
 
-  useEffect(() => { fetchOrders(); }, []);
-
+  //useEffect(() => { fetchOrders(); }, []);
+  // Inside OrderManagerSection
+  useEffect(() => { 
+    if (storeId) {
+      fetchOrders(); 
+    }
+  }, [storeId]); // <--- Add storeId as a dependency!
+  {/* }
   async function fetchOrders() {
-    const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+  // We need to join with order_items to find orders that contain THIS store's products
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, 
+      total_price, 
+      status, 
+      created_at,
+      order_items!inner(product_id, products!inner(store_id))
+    `)
+    .eq('order_items.products.store_id', storeId) // Filter for THIS shop only
+    .order('created_at', { ascending: false });
+
+  if (data) setOrders(data);
+  */}  
+  async function fetchOrders() {
+    if (!storeId) return;
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items!inner(
+          product_id,
+          products!inner(store_id)
+        )
+      `)
+      .eq('order_items.products.store_id', storeId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error("Order Fetch Error:", error.message);
+      return;
+    }
+    
     if (data) setOrders(data);
   }
 
@@ -172,7 +212,7 @@ async function fetchProducts() {
     let finalImageUrl = form.image_url;
 
     try {
-      // 1. Image Upload Logic (remains the same as before)
+      // 1. Image Upload Logic
       if (selectedFile) {
         const fileExt = selectedFile.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
@@ -183,39 +223,39 @@ async function fetchProducts() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // 2. Prepare the Data Object
+      // 2. Prepare Data (Clean and Explicit)
       const productData = { 
-        ...form, 
+        name: form.name,
+        description: form.description,
         price: parseFloat(form.price), 
+        stock_quantity: form.stock_quantity,
         image_url: finalImageUrl,
-        store_id: storeId // <--- CRITICAL: This links the product to the store
+        store_id: storeId // Use the storeId passed from the parent component
       };
 
       if (editingId) {
-        // UPDATE EXISTING
         const { error } = await supabase.from('products').update(productData).eq('id', editingId);
         if (error) throw error;
-      } 
-      
-      else {
-        // INSERT NEW
+        alert("Product updated!");
+      } else {
         const { error } = await supabase.from('products').insert([productData]);
         if (error) throw error;
+        alert("Product added!");
       }
-      // Inside handleSave, after the if(editingId) block:
-            
-    } 
-    
-    // Inside handleSave, after the if(editingId) block:
-    
-     
-    catch (err: any) {
+
+      // 3. SUCCESS HOUSEKEEPING
+      setEditingId(null);
+      setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });
+      setSelectedFile(null);
+      fetchProducts(); // Refresh the list so the new item appears!
+
+    } catch (err: any) {
+      console.error("Save Error:", err);
       alert(err.message);
-    } 
-    finally {
+    } finally {
+      setUploading(true); // Small tip: set to false to re-enable button
       setUploading(false);
     }
-    
   }
   
 
@@ -246,33 +286,56 @@ async function fetchProducts() {
       <h2 className="text-2xl font-bold mb-2">Inventory Management</h2>
       <p className="text-gray-500 mb-6 text-sm">{editingId ? "Currently Editing a Product" : "Add a New Laptop"}</p>
       
-      <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 bg-gray-50 p-6 rounded-2xl">
-        <input type="text" placeholder="Name" className="p-2 border rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
-        <input type="number" placeholder="Price" className="p-2 border rounded" value={form.price} onChange={e => setForm({...form, price: e.target.value})} required />
-        <input type="number" placeholder="Stock Quantity" className="p-2 border rounded" value={form.stock_quantity} onChange={e => setForm({...form, stock_quantity: parseInt(e.target.value) || 0})} required />
-        <input type="text" placeholder="Description" className="p-2 border rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} required />
-        
-
-        <div className="md:col-span-2">
-          <label className="block text-sm text-gray-500 mb-1">Laptop Photo (Leave empty to keep current)</label>
-          <input type="file" accept="image/*" className="w-full p-2 border border-dashed rounded-xl bg-white"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
-        </div>
-
-        <div className="md:col-span-2 flex gap-2">
-           <button type="submit" disabled={uploading} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold disabled:bg-gray-400">
-            {uploading ? 'Processing...' : editingId ? 'Update Product' : 'Add Laptop with Photo'}
-          </button>
+      {!storeId ? (
+        <div className="p-10 text-center bg-gray-50 rounded-2xl">Loading Store Data...</div>
+      ) : (
+        <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 bg-gray-50 p-6 rounded-2xl">
+          <input type="text" placeholder="Laptop Name" className="p-3 border rounded-xl" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
+          <input type="number" placeholder="Price ($)" className="p-3 border rounded-xl" value={form.price} onChange={e => setForm({...form, price: e.target.value})} required />
+          <input type="number" placeholder="Stock Amount" className="p-3 border rounded-xl" value={form.stock_quantity} onChange={e => setForm({...form, stock_quantity: parseInt(e.target.value) || 0})} required />
           
-          {editingId && (
-            <button type="button" onClick={() => {setEditingId(null); setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });}} className="px-6 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold">
-              Cancel
-            </button>
-          )}
-        </div>
-      </form>
+          {/* RECOMMENDED: Add Category field so it shows up in your 'Gaming/Business' filters */}
+          <select 
+            className="p-3 border rounded-xl bg-white"
+            value={(form as any).category || 'Business'} 
+            onChange={e => setForm({...form, [ 'category' as any]: e.target.value})}
+          >
+            <option value="Gaming">Gaming</option>
+            <option value="Business">Business</option>
+            <option value="UltraBook">UltraBook</option>
+          </select>
 
-      <div className="grid gap-4">
+          <textarea 
+            placeholder="Description" 
+            className="p-3 border rounded-xl md:col-span-2" 
+            value={form.description} 
+            onChange={e => setForm({...form, description: e.target.value})} 
+            required 
+          />
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-bold text-gray-600 mb-2">Product Photo</label>
+            <input type="file" accept="image/*" className="w-full p-2 border border-dashed border-blue-300 rounded-xl bg-white"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+          </div>
+
+          <div className="md:col-span-2 flex gap-2">
+            <button type="submit" disabled={uploading} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition disabled:bg-gray-400">
+              {uploading ? 'Uploading...' : editingId ? 'Save Changes' : 'List Laptop for Sale'}
+            </button>
+            
+            {editingId && (
+              <button type="button" onClick={() => {setEditingId(null); setForm({ name: '', price: '', stock_quantity: 0, description: '', image_url: '', store_id: '' });}} className="px-8 bg-gray-200 text-gray-700 py-4 rounded-xl font-bold">
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+
+      {/* Product List below remains the same but ensure fetchProducts is called */}
+      
+       <div className="grid gap-4">
         {products.map(p => (
           <div key={p.id} className="flex justify-between items-center p-3 bg-white border rounded-xl hover:shadow-md transition">
             <div className="flex items-center gap-3">
@@ -289,6 +352,8 @@ async function fetchProducts() {
           </div>
         ))}
       </div>
+
+      
     </div>
   );
 }

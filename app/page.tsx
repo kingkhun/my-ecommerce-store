@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { useCart} from '@/app/context/CartContext';
 
 interface Store {
@@ -129,7 +128,7 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600">Geek's store</h1>
+          <h1 className="text-2xl font-bold text-blue-600">Yoe-Yar store</h1>
           <h6 className="text-gray-600 italic">Built with TypeScript + Supabase + Next.js</h6>
           {user ? (
             <div className="flex items-center gap-4">
@@ -273,6 +272,23 @@ export default function Home() {
                 >
                   Visit Seller Store →
                 </Link>
+                {/* --- STOCK INDICATOR START --- */}
+                <div className="flex items-center gap-1.5">
+                  {product.stock_quantity > 0 ? (
+                    <>
+                      <span className={`w-2 h-2 rounded-full ${product.stock_quantity < 5 ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`}></span>
+                      <span className={`text-xs font-bold ${product.stock_quantity < 5 ? 'text-orange-600' : 'text-gray-600'}`}>
+                        {product.stock_quantity} in stock
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-bold text-red-500 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                      Out of Stock
+                    </span>
+                  )}
+                </div>
+                {/* --- STOCK INDICATOR END --- */}
               </div>
               <button 
                 disabled={product.stock_quantity <= 0}
@@ -326,38 +342,37 @@ export default function Home() {
 
       {/* FOOTER */}
     <div className="mt-12">
-    <footer className="bg-gray-900 text-white py-12">
-      <div className="max-w-6xl mx-auto px-4 md:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div>
-            <h3 className="text-xl font-bold mb-4">Contact Us</h3>
-            <p className="text-gray-300">📞 Phone: +1 (555) 123-4567</p>
-            <p className="text-gray-300">✉️ Email: hdcs@sum.com</p>
-          </div>
-          <div>
-            <h3 className="text-xl font-bold mb-4">Follow Us</h3>
-            <div className="flex space-x-4">
-              <a href="#" className="text-gray-300 hover:text-white transition">Facebook</a>
-              <a href="#" className="text-gray-300 hover:text-white transition">Twitter</a>
-              <a href="#" className="text-gray-300 hover:text-white transition">Instagram</a>
+        <footer className="bg-gray-900 text-white py-12">
+          <div className="max-w-6xl mx-auto px-4 md:px-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div>
+                <h3 className="text-xl font-bold mb-4">Contact Us</h3>
+                <p className="text-gray-300">📞 Phone: +1 (555) 123-4567</p>
+                <p className="text-gray-300">✉️ Email: hdcs@sum.com</p>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold mb-4">Follow Us</h3>
+                <div className="flex space-x-4">
+                  <a href="#" className="text-gray-300 hover:text-white transition">Facebook</a>
+                  <a href="#" className="text-gray-300 hover:text-white transition">Twitter</a>
+                  <a href="#" className="text-gray-300 hover:text-white transition">Instagram</a>
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold mb-4">Newsletter</h3>
+                <p className="text-gray-300 mb-2">Subscribe for updates and offers!</p>
+                {/* Simple newsletter form */}
+                <input type="email" placeholder="Your email" className="w-full p-2 rounded text-black mb-2" />
+                <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Subscribe</button>
+              </div>
+            </div>
+            <div className="border-t border-gray-700 mt-8 pt-8 text-center text-gray-400">
+              &copy; {new Date().getFullYear()} Laptop Store. All rights reserved.
             </div>
           </div>
-          <div>
-            <h3 className="text-xl font-bold mb-4">Newsletter</h3>
-            <p className="text-gray-300 mb-2">Subscribe for updates and offers!</p>
-            {/* Simple newsletter form */}
-            <input type="email" placeholder="Your email" className="w-full p-2 rounded text-black mb-2" />
-            <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Subscribe</button>
-          </div>
-        </div>
-        <div className="border-t border-gray-700 mt-8 pt-8 text-center text-gray-400">
-          &copy; {new Date().getFullYear()} Laptop Store. All rights reserved.
-        </div>
+        </footer>
       </div>
-    </footer>
-  </div>
     </div>
-      
-
+     
   );
 }

@@ -59,11 +59,6 @@ export default function LoginPage() {
             Don't have an account? Sign Up
           </button>
           
-          
-          
-          
-          
-          
         </div>
       </div>
     </div>

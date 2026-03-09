@@ -1,6 +1,7 @@
 import "./globals.css";
 // 1. Import the Provider you just created
 import { CartProvider } from '@/app/context/CartContext'; 
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export default function RootLayout({
   children,
