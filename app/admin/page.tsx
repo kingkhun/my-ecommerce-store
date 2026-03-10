@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
+import MyOrders from '../orders/page';
+
 
 // 1. TYPES
 interface Order {
@@ -33,37 +35,49 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [myStoreId, setMyStoreId] = useState<string | null>(null); // Added this state
   const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const router = useRouter();
 
+  // 1. Initial Auth & Store Check
   useEffect(() => {
-    async function checkVendorStatus() {
+    async function initializeDashboard() {
       const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+      if (!user) { router.push('/login'); return; }
 
-      // We check if this specific user owns a store in the 'stores' table
-      const { data: store, error } = await supabase
-        .from('stores')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
+      const { data: store } = await supabase
+        .from('stores').select('id').eq('owner_id', user.id).single();
 
-      if (error || !store) {
-        // No store found? Send them to create one!
+      if (!store) {
         router.push('/setup-store');
       } else {
-        // Store found! They are allowed in.
+        setMyStoreId(store.id);
         setIsAdmin(true);
-        setMyStoreId(store.id); 
+        // Load data once we have the ID
+        await Promise.all([fetchOrders(store.id), fetchProducts(store.id)]);
       }
       setLoading(false);
     }
-    
-    checkVendorStatus();
+    initializeDashboard();
   }, [router]);
+
+  // 2. Centralized Fetching Logic
+  async function fetchOrders(id: string) {
+    const { data } = await supabase
+      .from('orders')
+      .select('*, order_items!inner(products!inner(store_id))')
+      .eq('order_items.products.store_id', id)
+      .order('created_at', { ascending: false });
+    if (data) setOrders(data);
+  }
+
+  async function fetchProducts(id: string) {
+    const { data } = await supabase
+      .from('products').select('*').eq('store_id', id).order('name');
+    if (data) setProducts(data);
+  }
+
+  if (loading) return <div className="p-20 text-center">Loading Dashboard...</div>;
 
   if (loading) return <div className="p-20 text-center">Verifying Store Access...</div>;
   if (!isAdmin) return null;
@@ -71,11 +85,66 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-12">
       <div className="max-w-6xl mx-auto space-y-12">
-        <h1 className="text-4xl font-black text-gray-900">Admin Control Center</h1>
-        
+        {/*<h1 className="text-4xl font-black text-gray-900">Admin Control Center</h1>*/}
+        <header className="flex justify-between items-end">
+          <div>
+            <h1 className="text-4xl font-black text-gray-900 tracking-tight">Seller Dashboard</h1>
+            <p className="text-gray-500 font-medium">Manage your shop and track earnings.</p>
+          </div>
+        </header>
+        <DashboardStats orders={orders} products={products} />
         <OrderManagerSection storeId={myStoreId} />
         <ProductManagerSection storeId={myStoreId} />
       </div>
+    </div>
+  );
+}
+
+function DashboardStats({ orders, products }: { orders: Order[], products: Product[] }) {
+  // 1. Calculate Total Revenue (only from Shipped/Delivered orders to be safe)
+  const totalRevenue = orders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((acc, curr) => acc + curr.total_price, 0);
+
+  // 2. Calculate Total Inventory Value (Price * Stock)
+  const inventoryValue = products.reduce((acc, curr) => acc + (curr.price * curr.stock_quantity), 0);
+
+  // 3. Low Stock Count
+  const lowStockCount = products.filter(p => p.stock_quantity < 5).length;
+
+  // 4. Calculate Total Laptops Sold (Sum of count of orders)
+  //const totalSalesCount = orders.filter(o => o.status === 'delivered').length;
+
+  // 5. Calculate Total Laptops Sold (Sum of count of orders)
+  const totalSales = orders.filter(o => o.status === 'delivered').length;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      
+      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Revenue</span>
+        <div className="text-3xl font-black text-green-600 mt-1">${totalRevenue.toLocaleString()}</div>
+        <p className="text-xs text-gray-500 mt-2">From {orders.length} orders</p>
+      </div>
+
+      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Completed Sales</span>
+        <div className="text-3xl font-black text-blue-600 mt-1">{totalSales}</div>
+        <p className="text-xs text-gray-500 mt-2">Orders delivered successfully</p>
+      </div>
+      
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+        <p className="text-gray-500 text-sm font-bold uppercase tracking-widest mb-2">Inventory Value</p>
+        <h3 className="text-4xl font-black text-blue-600">${inventoryValue.toLocaleString()}</h3>
+      </div>
+
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+        <p className="text-gray-500 text-sm font-bold uppercase tracking-widest mb-2">Low Stock Alerts</p>
+        <h3 className={`text-4xl font-black ${lowStockCount > 0 ? 'text-orange-500' : 'text-gray-300'}`}>
+          {lowStockCount} Items
+        </h3>
+      </div>
+      
+      
     </div>
   );
 }
