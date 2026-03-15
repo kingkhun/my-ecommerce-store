@@ -2,49 +2,51 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
-import MyOrders from '../orders/page';
 
 
 // 1. TYPES
-interface Order {
-  id: string;
-  total_price: number;
-  status: string;
-  created_at: string;
-}
+interface Order {  id: string;  total_price: number;  status: string;  created_at: string;}
 
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-  image_url: string;
-  description: string;
-  stock_quantity: number;
+interface Product {  id: string;  name: string;  price: number;  image_url: string;  description: string;  stock_quantity: number;
   store_id?: string;
 }
 
-interface Store {
-  id: string;
-  name: string;
-  owner_id: string;
-  description?: string;
-  logo_url?: string;
-}
+
+
+interface Store {  id: string;  name: string;  owner_id: string;  description?: string;  logo_url?: string;}
 
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [myStoreId, setMyStoreId] = useState<string | null>(null); // Added this state
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const router = useRouter();
-
+  
   // 1. Initial Auth & Store Check
   useEffect(() => {
     async function initializeDashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
 
+      // 1. Check Profile for Super Admin status
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_super_admin')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.is_super_admin) {
+          setIsAdmin(true);
+          setIsSuperAdmin(true);
+          setMyStoreId('GLOBAL'); 
+          await Promise.all([fetchOrders('GLOBAL'), fetchProducts('GLOBAL')]);
+          setLoading(false); // CRITICAL: Must set loading false before returning
+          return;
+      }
+
+      // 2. If not Super Admin, check for Store Ownership
       const { data: store } = await supabase
         .from('stores').select('id').eq('owner_id', user.id).single();
 
@@ -53,7 +55,6 @@ export default function AdminPage() {
       } else {
         setMyStoreId(store.id);
         setIsAdmin(true);
-        // Load data once we have the ID
         await Promise.all([fetchOrders(store.id), fetchProducts(store.id)]);
       }
       setLoading(false);
@@ -61,46 +62,121 @@ export default function AdminPage() {
     initializeDashboard();
   }, [router]);
 
-  // 2. Centralized Fetching Logic
   async function fetchOrders(id: string) {
-    const { data } = await supabase
-      .from('orders')
-      .select('*, order_items!inner(products!inner(store_id))')
-      .eq('order_items.products.store_id', id)
-      .order('created_at', { ascending: false });
+    let query = supabase.from('orders').select(`
+      *,
+      order_items (
+        quantity,
+        price_at_purchase,
+        products (name, store_id)
+      )
+    `);
+
+    if (id !== 'GLOBAL') {
+      // Regular seller filter
+      query = query.eq('order_items.products.store_id', id);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) console.error(error);
     if (data) setOrders(data);
   }
 
-  async function fetchProducts(id: string) {
-    const { data } = await supabase
-      .from('products').select('*').eq('store_id', id).order('name');
+async function fetchProducts(id: string) {
+    let query = supabase.from('products').select('*');
+    
+    // If Super Admin, we want ALL products to calculate total inventory value
+    if (id !== 'GLOBAL') {
+      query = query.eq('store_id', id);
+    }
+
+    const { data } = await query.order('name');
     if (data) setProducts(data);
   }
 
   if (loading) return <div className="p-20 text-center">Loading Dashboard...</div>;
 
-  if (loading) return <div className="p-20 text-center">Verifying Store Access...</div>;
+  //if (loading) return <div className="p-20 text-center">Verifying Store Access...</div>;
   if (!isAdmin) return null;
+
+  // download as CSV
+  const downloadCSV = () => {
+    if (orders.length === 0) return;
+
+    // 1. Define Headers
+    const headers = ["Order ID", "Date", "Total Price", "Status", "Platform Fee (10%)", "Seller Net"];
+    
+    // 2. Map data to rows
+    const rows = orders.map(o => [
+      o.id,
+      new Date(o.created_at).toLocaleDateString(),
+      o.total_price,
+      o.status,
+      (o.total_price * 0.1).toFixed(2),
+      (o.total_price * 0.9).toFixed(2)
+    ]);
+
+    // 3. Create CSV Content
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+
+    // 4. Trigger Download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `marketplace_sales_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-12">
       <div className="max-w-6xl mx-auto space-y-12">
-        {/*<h1 className="text-4xl font-black text-gray-900">Admin Control Center</h1>*/}
         <header className="flex justify-between items-end">
           <div>
-            <h1 className="text-4xl font-black text-gray-900 tracking-tight">Seller Dashboard</h1>
-            <p className="text-gray-500 font-medium">Manage your shop and track earnings.</p>
+            <h1 className="text-4xl font-black text-gray-900 tracking-tight">
+                {isSuperAdmin ? "Super Admin Dashboard" : "Seller Dashboard"}
+            </h1>
+            <p className="text-gray-500 font-medium">
+                {isSuperAdmin ? "Global Marketplace Overview" : "Manage your shop and track earnings."}
+            </p>
           </div>
+
+          {/* ONLY show download button to Super Admin */}
+          {isSuperAdmin && (
+            <button 
+              onClick={downloadCSV}
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition"
+            >
+              <span>📊</span> Download Sales CSV
+            </button>
+          )}
         </header>
-        <DashboardStats orders={orders} products={products} />
-        <OrderManagerSection storeId={myStoreId} />
-        <ProductManagerSection storeId={myStoreId} />
+
+        <DashboardStats orders={orders} products={products} isSuperAdmin={isSuperAdmin} />
+        
+        {/* Pass isSuperAdmin so the section knows whether to filter or not */}
+        <OrderManagerSection storeId={myStoreId} isSuperAdmin={isSuperAdmin} />
+        
+        {/* Hide Product Manager for Super Admin if they don't have a shop */}
+        {!isSuperAdmin && <ProductManagerSection storeId={myStoreId} />}
       </div>
     </div>
   );
 }
 
-function DashboardStats({ orders, products }: { orders: Order[], products: Product[] }) {
+function DashboardStats({ 
+  orders, 
+  products, 
+  isSuperAdmin 
+}: { 
+  orders: Order[], 
+  products: Product[], 
+  isSuperAdmin: boolean // Add this line
+}) {
   // 1. Calculate Total Revenue (only from Shipped/Delivered orders to be safe)
   const totalRevenue = orders
     .filter(o => o.status !== 'cancelled')
@@ -117,6 +193,14 @@ function DashboardStats({ orders, products }: { orders: Order[], products: Produ
 
   // 5. Calculate Total Laptops Sold (Sum of count of orders)
   const totalSales = orders.filter(o => o.status === 'delivered').length;
+
+  const totalGross = orders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((acc, curr) => acc + curr.total_price, 0);
+
+  // Platform Fee Calculation (10%)
+  const platformFee = totalGross * 0.10;
+  const sellerNet = totalGross - platformFee;
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
       
@@ -144,74 +228,105 @@ function DashboardStats({ orders, products }: { orders: Order[], products: Produ
         </h3>
       </div>
       
+      {/* Card 1: Gross Revenue */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+          {isSuperAdmin ? "Global Gross Sales" : "Total Revenue"}
+        </span>
+        <div className="text-3xl font-black text-gray-900 mt-1">${totalGross.toLocaleString()}</div>
+      </div>
+
+      {/* Card 2: The 10% Platform Cut */}
+      <div className="bg-blue-600 p-6 rounded-3xl shadow-lg transform scale-105">
+        <span className="text-xs font-bold text-blue-200 uppercase tracking-widest">
+          {isSuperAdmin ? "Platform Earnings (10%)" : "Platform Fee (10%)"}
+        </span>
+        <div className="text-3xl font-black text-white mt-1">${platformFee.toLocaleString()}</div>
+        <p className="text-xs text-blue-100 mt-2">
+          {isSuperAdmin ? "Total commission collected" : "Fee deducted from total"}
+        </p>
+      </div>
+
+      {/* Card 3: Net Payout */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+          {isSuperAdmin ? "Total Seller Payouts" : "Your Net Earnings"}
+        </span>
+        <div className="text-3xl font-black text-green-600 mt-1">${sellerNet.toLocaleString()}</div>
+      </div>
       
     </div>
   );
 }
 
 // --- SUB-SECTION: ORDER MANAGER ---
-function OrderManagerSection({ storeId }: { storeId: string | null }) {
+function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null, isSuperAdmin: boolean }) {
   const [orders, setOrders] = useState<Order[]>([]);
 
-  //useEffect(() => { fetchOrders(); }, []);
-  // Inside OrderManagerSection
   useEffect(() => { 
-    if (storeId) {
-      fetchOrders(); 
-    }
-  }, [storeId]); // <--- Add storeId as a dependency!
-  {/* }
-  async function fetchOrders() {
-  // We need to join with order_items to find orders that contain THIS store's products
-  const { data, error } = await supabase
-    .from('orders')
-    .select(`
-      id, 
-      total_price, 
-      status, 
-      created_at,
-      order_items!inner(product_id, products!inner(store_id))
-    `)
-    .eq('order_items.products.store_id', storeId) // Filter for THIS shop only
-    .order('created_at', { ascending: false });
+    if (storeId) fetchOrders(); 
+  }, [storeId]);
+   
+  async function updateStatus(id: string, status: string) {
+    const { error } = await supabase
+      .from('orders')
+      .update({ status })
+      .eq('id', id);
 
-  if (data) setOrders(data);
-  */}  
+    if (error) {
+      console.error("Update Error:", error.message);
+      alert("Failed to update status: " + error.message);
+    } else {
+      // Refresh the local state so the UI stays correct after refresh
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+      alert("Status updated to " + status);
+    }
+  }
+
   async function fetchOrders() {
     if (!storeId) return;
 
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        order_items!inner(
-          product_id,
-          products!inner(store_id)
-        )
-      `)
-      .eq('order_items.products.store_id', storeId)
-      .order('created_at', { ascending: false });
+    let query;
+
+    if (isSuperAdmin) {
+      // Super Admin gets a clean list of all orders
+      query = supabase
+        .from('orders')
+        .select('*') 
+    } else {
+      // Shop owner gets only their orders using the relationship
+      query = supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items!inner(
+            product_id,
+            products!inner(store_id)
+          )
+        `)
+        .eq('order_items.products.store_id', storeId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
-      console.error("Order Fetch Error:", error.message);
-      return;
+      console.error("Fetch Error:", error.message);
+    } else {
+      // For Super Admin, we don't have nested order_items in this specific select, 
+      // so we just set the data.
+      setOrders(data as Order[]);
     }
-    
-    if (data) setOrders(data);
-  }
-
-  async function updateStatus(id: string, status: string) {
-    const { error } = await supabase.from('orders').update({ status }).eq('id', id);
-    if (!error) setOrders(orders.map(o => o.id === id ? { ...o, status } : o));
   }
 
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-      <h2 className="text-2xl font-bold mb-6">Global Orders</h2>
+      <h2 className="text-2xl font-bold mb-6">
+          {isSuperAdmin ? "Recent Orders (All Stores)" : "Your Store Orders"}
+      </h2>
       <div className="overflow-x-auto">
         <table className="w-full text-left">
-          <thead>
-            <tr className="text-gray-400 text-sm uppercase border-b">
+          <thead className="text-gray-400 text-sm uppercase border-b">
+            <tr>
               <th className="pb-4">Order ID</th>
               <th className="pb-4">Total</th>
               <th className="pb-4">Status</th>
@@ -222,7 +337,7 @@ function OrderManagerSection({ storeId }: { storeId: string | null }) {
             {orders.map(order => (
               <tr key={order.id} className="hover:bg-gray-50">
                 <td className="py-4 font-mono text-xs">{order.id.slice(0,8)}...</td>
-                <td className="py-4 font-bold">${order.total_price}</td>
+                <td className="py-4 font-bold text-green-600">${order.total_price}</td>
                 <td className="py-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
                         {order.status.toUpperCase()}
@@ -232,7 +347,7 @@ function OrderManagerSection({ storeId }: { storeId: string | null }) {
                   <select 
                     value={order.status}
                     onChange={(e) => updateStatus(order.id, e.target.value)}
-                    className="border rounded p-1 text-sm outline-none"
+                    className="border rounded p-1 text-sm outline-none bg-white"
                   >
                     <option value="pending">Pending</option>
                     <option value="shipped">Shipped</option>
@@ -421,8 +536,6 @@ async function fetchProducts() {
           </div>
         ))}
       </div>
-
-      
     </div>
   );
 }
