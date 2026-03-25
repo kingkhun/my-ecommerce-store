@@ -302,7 +302,7 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
         `)
         .eq('order_items.products.store_id', storeId);
     }
-    /*
+    
     const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
@@ -311,7 +311,7 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
       // For Super Admin, we don't have nested order_items in this specific select, 
       // so we just set the data.
       setOrders(data as Order[]);
-    } */
+    } 
   }
 
   return (
