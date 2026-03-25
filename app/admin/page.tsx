@@ -3,15 +3,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
-
 // 1. TYPES
 interface Order {  id: string;  total_price: number;  status: string;  created_at: string;}
-
 interface Product {  id: string;  name: string;  price: number;  image_url: string;  description: string;  stock_quantity: number;
   store_id?: string;
 }
-
-
 
 interface Store {  id: string;  name: string;  owner_id: string;  description?: string;  logo_url?: string;}
 
@@ -306,7 +302,7 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
         `)
         .eq('order_items.products.store_id', storeId);
     }
-
+    /*
     const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
@@ -315,7 +311,7 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
       // For Super Admin, we don't have nested order_items in this specific select, 
       // so we just set the data.
       setOrders(data as Order[]);
-    }
+    } */
   }
 
   return (

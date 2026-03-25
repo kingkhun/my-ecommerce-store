@@ -32,7 +32,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8">
-        <h1 className="text-3xl font-bold text-center mb-8">Welcome to MyStore</h1>
+        <h1 className="text-3xl font-bold text-center mb-8">Welcome to Yoe-Yar</h1>
         
         <input 
           type="email" placeholder="Email Address" 
