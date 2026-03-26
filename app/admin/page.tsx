@@ -284,37 +284,40 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
   }
 
   async function fetchOrders() {
-    if (!storeId) return;
+    try {
+      let query;
 
-    let query;
+      if (isSuperAdmin) {
+        // Super Admin: Simple select of all rows
+        query = supabase.from('orders').select('*');
+      } else {
+        // Shop Owner: Needs the Join to check store_id
+        if (!storeId) return;
+        query = supabase
+          .from('orders')
+          .select(`
+            *,
+            order_items!inner(
+              product_id,
+              products!inner(store_id)
+            )
+          `)
+          .eq('order_items.products.store_id', storeId);
+      }
 
-    if (isSuperAdmin) {
-      // Super Admin gets a clean list of all orders
-      query = supabase
-        .from('orders')
-        .select('*') 
-    } else {
-      // Shop owner gets only their orders using the relationship
-      query = supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items!inner(
-            product_id,
-            products!inner(store_id)
-          )
-        `)
-        .eq('order_items.products.store_id', storeId);
-    }
+      const { data, error: supabaseError } = await query.order('created_at', { ascending: false });
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+      if (supabaseError) {
+        // Use .message to see what is actually wrong
+        console.error("Supabase Error:", supabaseError.message);
+        return;
+      }
 
-    if (error) {
-      console.error("Fetch Error:", error.message);
-    } else {
-      // For Super Admin, we don't have nested order_items in this specific select, 
-      // so we just set the data.
-      setOrders(data as Order[]);
+      if (data) {
+        setOrders(data);
+      }
+    } catch (err) {
+      console.error("System Error:", err);
     }
   }
 
