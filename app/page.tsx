@@ -367,7 +367,7 @@ export default function Home() {
               </div>
             </div>
             <div className="border-t border-gray-700 mt-8 pt-8 text-center text-gray-400">
-              &copy; {new Date().getFullYear()} Laptop Store. All rights reserved.
+              &copy; {new Date().getFullYear()} Yoe-Yar Store. All rights reserved.
             </div>
           </div>
         </footer>
