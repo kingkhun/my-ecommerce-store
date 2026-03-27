@@ -65,49 +65,6 @@ export default function AdminPage() {
     initializeDashboard();
   }, [router]);
 
-  /*
-
-  async function fetchOrders(id: string, superAdmin: boolean) {
-  try {
-    let query;
-
-    if (superAdmin) {
-      // Super Admin sees everything directly
-      query = supabase
-        .from('orders')
-        .select('*');
-    } else {
-      // Shop Owner: Filter orders by checking the store_id inside order_items
-      // We use !inner to hide any orders that don't belong to this store
-      query = supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items!inner (
-            product_id,
-            products!inner (store_id)
-          )
-        `)
-          .eq('order_items.products.stores.owner_id', id) 
-    }
-
-    // Sort by created_at DESC so last orders are at the top
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      console.error("Fetch Error:", error.message);
-      setOrders([]);
-    } else {
-      console.log("Updated orders found for shop:", data.length);
-      setOrders(data || []);
-    }
-  } catch (err) {
-    console.error("System error:", err);
-  }
-}
-  */
-
-
   
   // Replace your existing fetchOrders with this temporary "Safe Fetch"
   async function fetchOrders(id: string, superAdmin: boolean) {
@@ -390,40 +347,8 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
     console.error("Fetch error:", err);
   }
   }
-  /*
-  async function fetchOrders() {
-    try {
-      let query;
-
-    if (isSuperAdmin) {
-      // Super Admin gets a clean list of all orders
-      query = supabase
-        .from('orders')
-        .select('*') 
-    } else {
-      // Shop owner gets only their orders using the relationship
-      query = supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items!inner(
-            product_id,
-            products!inner(store_id)
-          )
-        `)
-        .eq('order_items.products.store_id', storeId);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      console.error("Fetch Error:", error.message);
-    } else {
-      // For Super Admin, we don't have nested order_items in this specific select, 
-      // so we just set the data.
-      setOrders(data as Order[]);
-    }
-  }
+  
+  
 
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
