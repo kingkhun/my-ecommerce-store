@@ -11,8 +11,6 @@ interface Product {  id: string;  name: string;  price: number;  image_url: stri
   store_id?: string;
 }
 
-
-
 interface Store {  id: string;  name: string;  owner_id: string;  description?: string;  logo_url?: string;}
 
 export default function AdminPage() {
@@ -23,150 +21,225 @@ export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const router = useRouter();
+  const [myStoreDetails, setMyStoreDetails] = useState<Store | null>(null);
   
-  // 1. Initial Auth & Store Check
   useEffect(() => {
     async function initializeDashboard() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          router.push('/login');
+          return;
+        }
 
-      // 1. Check Profile for Super Admin status
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_super_admin')
-        .eq('id', user.id)
-        .single();
+        const [profileRes, storeRes] = await Promise.all([
+          supabase.from('profiles').select('is_super_admin, is_admin').eq('id', user.id).maybeSingle(),
+          supabase.from('stores').select('*').eq('owner_id', user.id).maybeSingle()
+        ]);
 
-      if (profile?.is_super_admin) {
+        const profile = profileRes.data;
+        const store = storeRes.data;
+
+        if (profile?.is_super_admin) {
           setIsAdmin(true);
           setIsSuperAdmin(true);
-          setMyStoreId('GLOBAL'); 
-          await Promise.all([fetchOrders('GLOBAL'), fetchProducts('GLOBAL')]);
-          setLoading(false); // CRITICAL: Must set loading false before returning
-          return;
-      }
+          setMyStoreId('GLOBAL');
+          await Promise.all([fetchOrders('GLOBAL', true), fetchProducts('GLOBAL', true)]);
+        } else if (profile?.is_admin || store) {
+          setIsAdmin(true);
+          setIsSuperAdmin(false);
+          if (store) {
+            setMyStoreId(store.id);
+            setMyStoreDetails(store);
+            await Promise.all([fetchOrders(store.id, false), fetchProducts(store.id, false)]);
+          }
+        } 
+       
 
-      // 2. If not Super Admin, check for Store Ownership
-      const { data: store } = await supabase
-        .from('stores').select('id').eq('owner_id', user.id).single();
-
-      if (!store) {
-        router.push('/setup-store');
-      } else {
-        setMyStoreId(store.id);
-        setIsAdmin(true);
-        await Promise.all([fetchOrders(store.id), fetchProducts(store.id)]);
+      } catch (err: any) {
+        console.error("Auth Error:", err.message);
+      } finally {
+        setLoading(false); // This triggers the "Gatekeeper" logic below
       }
-      setLoading(false);
     }
+    
     initializeDashboard();
   }, [router]);
 
-  async function fetchOrders(id: string) {
-    let query = supabase.from('orders').select(`
-      *,
-      order_items (
-        quantity,
-        price_at_purchase,
-        products (name, store_id)
-      )
-    `);
+  /*
 
-    if (id !== 'GLOBAL') {
-      // Regular seller filter
-      query = query.eq('order_items.products.store_id', id);
+  async function fetchOrders(id: string, superAdmin: boolean) {
+  try {
+    let query;
+
+    if (superAdmin) {
+      // Super Admin sees everything directly
+      query = supabase
+        .from('orders')
+        .select('*');
+    } else {
+      // Shop Owner: Filter orders by checking the store_id inside order_items
+      // We use !inner to hide any orders that don't belong to this store
+      query = supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items!inner (
+            product_id,
+            products!inner (store_id)
+          )
+        `)
+          .eq('order_items.products.stores.owner_id', id) 
     }
 
+    // Sort by created_at DESC so last orders are at the top
     const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) console.error(error);
-    if (data) setOrders(data);
-  }
 
-async function fetchProducts(id: string) {
-    let query = supabase.from('products').select('*');
+    if (error) {
+      console.error("Fetch Error:", error.message);
+      setOrders([]);
+    } else {
+      console.log("Updated orders found for shop:", data.length);
+      setOrders(data || []);
+    }
+  } catch (err) {
+    console.error("System error:", err);
+  }
+}
+  */
+
+
+  
+  // Replace your existing fetchOrders with this temporary "Safe Fetch"
+  async function fetchOrders(id: string, superAdmin: boolean) {
+    try {
+      // For debugging, only select from orders directly—no joins!
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Fetch Error:", error.message);
+        setOrders([]);
+      } else {
+        console.log("Orders found:", data.length);
+        setOrders(data || []);
+      }
+    } catch (err) {
+      console.error("System error:", err);
+    }
+  }
     
-    // If Super Admin, we want ALL products to calculate total inventory value
-    if (id !== 'GLOBAL') {
+  async function fetchProducts(id: string, superAdmin: boolean) {
+    let query = supabase.from('products').select('*');
+
+    // If NOT a super admin, filter by the specific store
+    if (!superAdmin) {
       query = query.eq('store_id', id);
     }
 
-    const { data } = await query.order('name');
-    if (data) setProducts(data);
+    const { data, error } = await query.order('name');
+    if (error) {
+      console.error("Fetch Products Error:", error.message);
+    } else {
+      setProducts(data || []);
+    }
+  }
+  if (loading) return <div className="h-screen flex items-center justify-center font-bold">Verifying Permissions...</div>;
+  //if (!isAdmin) return null;
+  if (!loading && !isAdmin && !isSuperAdmin) {
+          // If they aren't any kind of admin, send them back to the home page 
+          // instead of the store setup page.
+          router.push('/'); 
+          return null;
+        }
+      
+  if (isAdmin && !isSuperAdmin && !myStoreId) {
+    router.push('/setup-store');
+    return null;
+  }        
+    // PROTECT THE UI: Ensure nothing renders while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+        <span className="ml-3 font-medium text-gray-600">Verifying Admin Access...</span>
+      </div>
+    );
   }
 
-  if (loading) return <div className="p-20 text-center">Loading Dashboard...</div>;
-
-  //if (loading) return <div className="p-20 text-center">Verifying Store Access...</div>;
-  if (!isAdmin) return null;
-
-  // download as CSV
   const downloadCSV = () => {
-    if (orders.length === 0) return;
+    if (!orders || orders.length === 0) {
+      alert("No orders available to download.");
+      return;
+    }
 
-    // 1. Define Headers
-    const headers = ["Order ID", "Date", "Total Price", "Status", "Platform Fee (10%)", "Seller Net"];
-    
-    // 2. Map data to rows
-    const rows = orders.map(o => [
-      o.id,
-      new Date(o.created_at).toLocaleDateString(),
-      o.total_price,
-      o.status,
-      (o.total_price * 0.1).toFixed(2),
-      (o.total_price * 0.9).toFixed(2)
-    ]);
+    try {
+      const headers = ["Order ID", "Date", "Total Price", "Status", "Platform Fee", "Seller Net"];
+      
+      const rows = orders.map(o => [
+        o.id,
+        o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A',
+        o.total_price || 0,
+        o.status || 'pending',
+        ((o.total_price || 0) * 0.1).toFixed(2),
+        ((o.total_price || 0) * 0.9).toFixed(2)
+      ]);
 
-    // 3. Create CSV Content
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+      const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      
+      link.href = url;
+      link.setAttribute("download", `sales_report_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url); // Clean up memory
+    } catch (err) {
+      console.error("CSV Export Failed:", err);
+      alert("Could not generate CSV.");
+    }
+  };  
 
-    // 4. Trigger Download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `marketplace_sales_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+    return (
+      <div className="min-h-screen bg-gray-100 p-4 md:p-12">
+        <div className="max-w-6xl mx-auto space-y-12">
+          <header className="flex justify-between items-end">
+            <div>
+              <h1 className="text-4xl font-black text-gray-900 tracking-tight">
+                  {isSuperAdmin ? "Super Admin Dashboard" : "Seller Dashboard"}
+              </h1>
+              <p className="text-gray-500 font-medium">
+                  {isSuperAdmin ? "Global Marketplace Overview" : "Manage your shop and track earnings."}
+              </p>
+            </div>
 
+            {/* ONLY show download button to Super Admin */ }
+            {isSuperAdmin && (
+              <button 
+                onClick={downloadCSV}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition"
+              >
+                <span>📊</span> Download Sales CSV
+              </button>
+            )}
+          </header>
 
-
-  return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-12">
-      <div className="max-w-6xl mx-auto space-y-12">
-        <header className="flex justify-between items-end">
-          <div>
-            <h1 className="text-4xl font-black text-gray-900 tracking-tight">
-                {isSuperAdmin ? "Super Admin Dashboard" : "Seller Dashboard"}
-            </h1>
-            <p className="text-gray-500 font-medium">
-                {isSuperAdmin ? "Global Marketplace Overview" : "Manage your shop and track earnings."}
-            </p>
-          </div>
-
-          {/* ONLY show download button to Super Admin */}
-          {isSuperAdmin && (
-            <button 
-              onClick={downloadCSV}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition"
-            >
-              <span>📊</span> Download Sales CSV
-            </button>
-          )}
-        </header>
-
-        <DashboardStats orders={orders} products={products} isSuperAdmin={isSuperAdmin} />
-        
-        {/* Pass isSuperAdmin so the section knows whether to filter or not */}
-        <OrderManagerSection storeId={myStoreId} isSuperAdmin={isSuperAdmin} />
-        
-        {/* Hide Product Manager for Super Admin if they don't have a shop */}
-        {!isSuperAdmin && <ProductManagerSection storeId={myStoreId} />}
+          <DashboardStats orders={orders} products={products} isSuperAdmin={isSuperAdmin} />
+          
+         
+          <OrderManagerSection storeId={myStoreId} isSuperAdmin={isSuperAdmin} />
+          
+          
+          {!isSuperAdmin && <ProductManagerSection storeId={myStoreId} />}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  } 
 
 function DashboardStats({ 
   orders, 
@@ -265,7 +338,9 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
 
   useEffect(() => { 
     if (storeId) fetchOrders(); 
-  }, [storeId]);
+  }, [storeId])
+
+  
    
   async function updateStatus(id: string, status: string) {
     const { error } = await supabase
@@ -281,8 +356,43 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
       alert("Status updated to " + status);
     }
-  }
+  } 
 
+  async function fetchOrders() {
+  if (!storeId && !isSuperAdmin) return;
+
+  try {
+    let query = supabase.from('orders').select(`
+      *,
+      order_items!inner (
+        product_id,
+        products!inner (
+          store_id
+        )
+      )
+    `);
+
+    // If they aren't Super Admin, only show orders that contain their products
+    if (!isSuperAdmin) {
+      query = query.eq('order_items.products.store_id', storeId);
+    }
+
+    // Sort by the 'created_at' column in the ORDERS table
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // IMPORTANT: Since an order can have multiple items, 
+    // Supabase might return the same Order ID twice. 
+    // We filter for Unique IDs here:
+    const uniqueOrders = Array.from(new Map(data.map(item => [item.id, item])).values());
+    
+    setOrders(uniqueOrders);
+  } catch (err) {
+    console.error("Fetch error:", err);
+  }
+  }
+  /*
   async function fetchOrders() {
     try {
       let query;
@@ -319,8 +429,7 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
     } catch (err) {
       console.error("System Error:", err);
     }
-  }
-
+  } */
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
       <h2 className="text-2xl font-bold mb-6">

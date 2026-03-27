@@ -15,6 +15,8 @@ interface Product {
 interface Store {
   name: string;
   description: string;
+  logo_url: string;
+
 }
 
 export default function StoreFront() {
@@ -41,7 +43,7 @@ export default function StoreFront() {
       // 1. Fetch Store Details
       const { data: storeData } = await supabase
         .from('stores')
-        .select('name, description')
+        .select('name, description, logo_url')
         .eq('id', id)
         .single();
 
@@ -75,9 +77,27 @@ export default function StoreFront() {
     <div className="min-h-screen bg-white">
       {/* Store Header */}
       <div className="bg-gray-900 text-white py-16 px-6 text-center">
-            <h1 className="text-5xl font-black mb-4">{store.name}</h1>
-            <p className="text-gray-400 max-w-2xl mx-auto">{store.description}</p>
+        <div className="max-w-6xl mx-auto">
+          {/* Render Logo if it exists */}
+          {store.logo_url ? (
+            <img 
+              src={store.logo_url} 
+              alt={`${store.name} logo`} 
+              className="w-24 h-24 rounded-full mx-auto mb-6 object-cover border-4 border-gray-800 shadow-xl"
+            />
+          ) : (
+            /* Fallback icon if no logo is uploaded */
+            <div className="w-24 h-24 bg-gray-800 rounded-full mx-auto mb-6 flex items-center justify-center text-3xl">
+              🏪
+            </div>
+          )}
+
+          <h1 className="text-5xl font-black mb-4 tracking-tight">{store.name}</h1>
+          <p className="text-gray-400 max-w-2xl mx-auto text-lg leading-relaxed">
+            {store.description}
+          </p>
         </div>
+      </div>
 
         {/* Product Grid */}
         <div className="max-w-6xl mx-auto p-8">
