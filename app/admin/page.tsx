@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
 // 1. TYPES
-interface Order {  id: string;  total_price: number;  status: string;  created_at: string;}
+interface Order {  id: string;  total_price: number;  status: string;  created_at: string; order_items?: any[];}
 interface Product {  id: string;  name: string;  price: number;  image_url: string;  description: string;  stock_quantity: number;
   store_id?: string;
 }
@@ -20,6 +20,7 @@ export default function AdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const router = useRouter();
   const [myStoreDetails, setMyStoreDetails] = useState<Store | null>(null);
+  
   
   useEffect(() => {
     async function initializeDashboard() {
@@ -50,7 +51,7 @@ export default function AdminPage() {
           if (store) {
             setMyStoreId(store.id);
             setMyStoreDetails(store);
-            await Promise.all([fetchOrders(store.id, false), fetchProducts(store.id, false)]);
+            await Promise.all([fetchOrders(store.id, true), fetchProducts(store.id, true)]);
           }
         } 
        
@@ -65,6 +66,8 @@ export default function AdminPage() {
     initializeDashboard();
   }, [router]);
 
+  
+  
   
   // Replace your existing fetchOrders with this temporary "Safe Fetch"
   async function fetchOrders(id: string, superAdmin: boolean) {
@@ -85,7 +88,7 @@ export default function AdminPage() {
     } catch (err) {
       console.error("System error:", err);
     }
-  }
+  } 
     
   async function fetchProducts(id: string, superAdmin: boolean) {
     let query = supabase.from('products').select('*');
@@ -187,7 +190,7 @@ export default function AdminPage() {
           <DashboardStats orders={orders} products={products} isSuperAdmin={isSuperAdmin} />
           
          
-          <OrderManagerSection storeId={myStoreId} isSuperAdmin={isSuperAdmin} />
+          <OrderManagerSection storeId={myStoreId} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin}/>
           
           
           {!isSuperAdmin && <ProductManagerSection storeId={myStoreId} />}
@@ -288,15 +291,15 @@ function DashboardStats({
 }
 
 // --- SUB-SECTION: ORDER MANAGER ---
-function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null, isSuperAdmin: boolean }) {
-  const [orders, setOrders] = useState<Order[]>([]);
-
+//function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null, isSuperAdmin: boolean }) {
+  //const [orders, setOrders] = useState<Order[]>([]);
+// Updated Interface to include isAdmin
+function OrderManagerSection({   storeId,   isSuperAdmin,   isAdmin }: {   storeId: string | null,   isSuperAdmin: boolean,  isAdmin: boolean }) // Added this
+{ const [orders, setOrders] = useState<Order[]>([]);
   useEffect(() => { 
     if (storeId) fetchOrders(); 
   }, [storeId])
-
-  
-   
+    
   async function updateStatus(id: string, status: string) {
     const { error } = await supabase
       .from('orders')
@@ -312,10 +315,10 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
       alert("Status updated to " + status);
     }
   } 
-
+  
   async function fetchOrders() {
   if (!storeId && !isSuperAdmin) return;
-
+  const useShopFilter = !isSuperAdmin && isAdmin;
   try {
     let query = supabase.from('orders').select(`
       *,
@@ -328,9 +331,9 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
     `);
 
     // If they aren't Super Admin, only show orders that contain their products
-    if (!isSuperAdmin) {
-      query = query.eq('order_items.products.store_id', storeId);
-    }
+    if (useShopFilter) {
+    query = query.eq('order_items.products.store_id', storeId);
+    } 
 
     // Sort by the 'created_at' column in the ORDERS table
     const { data, error } = await query.order('created_at', { ascending: false });
@@ -346,7 +349,7 @@ function OrderManagerSection({ storeId, isSuperAdmin }: { storeId: string | null
   } catch (err) {
     console.error("Fetch error:", err);
   }
-  }
+  } 
   
   
 

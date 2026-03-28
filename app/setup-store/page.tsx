@@ -44,7 +44,7 @@ export default function StoreSetup() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
       <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
         <h1 className="text-3xl font-black mb-2">Open Your Shop</h1>
-        <p className="text-gray-500 mb-8">Give your store a name and start selling laptops today.</p>
+        <p className="text-gray-500 mb-8">Give your store a name and start selling today.</p>
 
         <form onSubmit={handleCreateStore} className="space-y-4">
           <div>
