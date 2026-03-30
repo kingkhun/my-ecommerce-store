@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
@@ -21,9 +21,69 @@ export default function AdminPage() {
   const router = useRouter();
   const [myStoreDetails, setMyStoreDetails] = useState<Store | null>(null);
   
-  
   useEffect(() => {
     async function initializeDashboard() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          router.push('/login');
+          return;
+        }
+
+        // Fetch profile and store data simultaneously
+        const [profileRes, storeRes] = await Promise.all([
+          supabase.from('profiles').select('is_super_admin, is_admin').eq('id', user.id).maybeSingle(),
+          supabase.from('stores').select('*').eq('owner_id', user.id).maybeSingle()
+        ]);
+
+        const profile = profileRes.data;
+        const store = storeRes.data;
+
+        // 1. Logic for SUPER ADMIN
+        if (profile?.is_super_admin) {
+          setIsAdmin(true);
+          setIsSuperAdmin(true);
+          setMyStoreId('GLOBAL');
+          
+          // Pass 'true' because they ARE super admin
+          await Promise.all([
+            fetchOrders('GLOBAL', true), 
+            fetchProducts('GLOBAL', true)
+          ]);
+
+        // 2. Logic for SHOP OWNERS (Admin or Store exists)
+        } else if (profile?.is_admin || store) {
+          setIsAdmin(true);
+          setIsSuperAdmin(false);
+
+          if (store) {
+            setMyStoreId(store.id);
+            setMyStoreDetails(store);
+            
+            // IMPORTANT: Pass 'false' here because they are NOT super admin
+            // This tells fetchOrders to filter by their specific store.id
+            await Promise.all([
+              fetchOrders(store.id, false), 
+              fetchProducts(store.id, false)
+            ]);
+          }
+        } 
+
+      } catch (err: any) {
+        console.error("Auth Error:", err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    initializeDashboard();
+  }, [router]);
+  /*
+  useEffect(() => {
+    async function initializeDashboard() {
+
+        
       try {
         const { data: { user } } = await supabase.auth.getUser();
         
@@ -64,11 +124,35 @@ export default function AdminPage() {
     }
     
     initializeDashboard();
-  }, [router]);
+  }, [router]); */
 
+  async function fetchOrders(storeId: string | null, isSuperAdmin: boolean) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      order_items!inner (
+        *,
+        products!inner (
+          store_id
+        )
+      )
+    `)
+    // If not super admin, filter by the store_id we just joined
+    .eq(isSuperAdmin ? '' : 'order_items.products.store_id', isSuperAdmin ? '' : storeId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error("Fetch error:", error);
+    return;
+  }
+
+  // Remove duplicates caused by the join
+  const uniqueOrders = Array.from(new Map(data.map(obj => [obj.id, obj])).values());
+  setOrders(uniqueOrders);
+}
   
-  
-  
+  /*
   // Replace your existing fetchOrders with this temporary "Safe Fetch"
   async function fetchOrders(id: string, superAdmin: boolean) {
     try {
@@ -76,8 +160,19 @@ export default function AdminPage() {
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .order('created_at', { ascending: false });
-
+        .order('created_at', { ascending: false }); 
+        /*const { data } = await supabase
+          .from('orders')
+          .select(`
+            *,
+            order_items (
+              *,
+              products (
+                store_id
+              )
+            )
+          `); */
+        /*
       if (error) {
         console.error("Fetch Error:", error.message);
         setOrders([]);
@@ -88,7 +183,7 @@ export default function AdminPage() {
     } catch (err) {
       console.error("System error:", err);
     }
-  } 
+  } */
     
   async function fetchProducts(id: string, superAdmin: boolean) {
     let query = supabase.from('products').select('*');
@@ -169,10 +264,10 @@ export default function AdminPage() {
           <header className="flex justify-between items-end">
             <div>
               <h1 className="text-4xl font-black text-gray-900 tracking-tight">
-                  {isSuperAdmin ? "Super Admin Dashboard" : "Seller Dashboard"}
+                  {isSuperAdmin ? "Super Admin Dashboard" : (myStoreDetails?.name || "Seller Dashboard")}
               </h1>
               <p className="text-gray-500 font-medium">
-                  {isSuperAdmin ? "Global Marketplace Overview" : "Manage your shop and track earnings."}
+                  {isSuperAdmin ? "Global Marketplace Overview" : `Managing store: ${myStoreDetails?.name || "Your Shop"}`}
               </p>
             </div>
 
@@ -187,7 +282,7 @@ export default function AdminPage() {
             )}
           </header>
 
-          <DashboardStats orders={orders} products={products} isSuperAdmin={isSuperAdmin} />
+          <DashboardStats storeId={myStoreId} orders={orders} products={products} isSuperAdmin={isSuperAdmin} />
           
          
           <OrderManagerSection storeId={myStoreId} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin}/>
@@ -199,35 +294,93 @@ export default function AdminPage() {
     );
   } 
 
-function DashboardStats({ 
-  orders, 
-  products, 
-  isSuperAdmin 
-}: { 
-  orders: Order[], 
-  products: Product[], 
-  isSuperAdmin: boolean // Add this line
-}) {
+function DashboardStats({ storeId,  orders,   products,   isSuperAdmin}: {  storeId: string | null, orders: Order[],   products: Product[],   isSuperAdmin: boolean }) 
+  {
+    const storeProducts = isSuperAdmin 
+    ? products 
+    : products.filter(p => p.store_id === storeId);
   // 1. Calculate Total Revenue (only from Shipped/Delivered orders to be safe)
-  const totalRevenue = orders
+    const totalRevenue = orders
     .filter(o => o.status !== 'cancelled')
     .reduce((acc, curr) => acc + curr.total_price, 0);
-
+    const inventoryValue = storeProducts.reduce((acc, curr) => acc + (curr.price * curr.stock_quantity), 0);
+    const lowStockCount = storeProducts.filter(p => p.stock_quantity < 5).length;
   // 2. Calculate Total Inventory Value (Price * Stock)
-  const inventoryValue = products.reduce((acc, curr) => acc + (curr.price * curr.stock_quantity), 0);
+  //const inventoryValue = products.reduce((acc, curr) => acc + (curr.price * curr.stock_quantity), 0);
 
   // 3. Low Stock Count
-  const lowStockCount = products.filter(p => p.stock_quantity < 5).length;
+  //const lowStockCount = products.filter(p => p.stock_quantity < 5).length;
 
   // 4. Calculate Total Laptops Sold (Sum of count of orders)
   //const totalSalesCount = orders.filter(o => o.status === 'delivered').length;
 
   // 5. Calculate Total Laptops Sold (Sum of count of orders)
   const totalSales = orders.filter(o => o.status === 'delivered').length;
+  // Inside your DashboardStats component
+ 
+ /* const totalSales = useMemo(() => {
+    return orders.filter(o => o.status === 'delivered').length; // This is the "safe" count that only looks at the order status
+  }, [orders]); */ 
+  
+  /*
+  const totalSales = useMemo(() => {  // This is a more complex calculation that tries to ensure we only count orders that actually contain the store's products.
+  // 1. Filter out cancelled orders immediately
+    const validOrders = orders.filter(o => o.status === 'delivered');
 
+    if (isSuperAdmin) return validOrders.length;
+
+    // 2. For Shop Owners: Filter orders that contain THEIR products
+    const myStoreOrders = validOrders.filter(order => {
+      // Safely grab the items array
+      const items = order.order_items || [];
+      
+      // Check if any item in this order belongs to this storeId
+      return items.some(item => {
+        // We check multiple possible paths for the store_id 
+        // to ensure it finds the data
+        const itemStoreId = item.products?.store_id || item.store_id;
+        return itemStoreId === storeId;
+      });
+    });
+
+  // Log this to your browser console (F12) to see what's happening!
+  console.log(`Store ${storeId} has ${myStoreOrders.length} delivered orders.`);
+  
+  return myStoreOrders.length;
+}, [orders, storeId, isSuperAdmin]); */
+    
+  /*const totalSales = orders.filter(o => {
+      const isDelivered = o.status === 'delivered';
+      if (isSuperAdmin) return isDelivered;
+      
+      // For Shop Owners: Only count if delivered AND contains their items
+      const hasMyItems = o.order_items?.some(item => item.products?.store_id === storeId);
+      return isDelivered && hasMyItems;
+    }).length; 
+    */
+  const totalGross = orders.reduce((acc, order) => {
+  if (order.status === 'cancelled') return acc;
+
+  if (isSuperAdmin) {
+      return acc + (order.total_price || 0);
+    } else {
+      // Sum only items where the product's store_id matches the owner
+      const myItemsTotal = (order.order_items || []).reduce((sum: number, item: any) => {
+        // Check the store_id inside the nested product object
+        if (item.products?.store_id === storeId) {
+          return sum + (Number(item.price_at_purchase) * Number(item.quantity));
+        }
+        return sum;
+      }, 0);
+      
+      return acc + myItemsTotal;
+    }
+  }, 0);
+
+  /*  
   const totalGross = orders
     .filter(o => o.status !== 'cancelled')
-    .reduce((acc, curr) => acc + curr.total_price, 0);
+    .reduce((acc, curr) => acc + curr.total_price, 0); */
 
   // Platform Fee Calculation (10%)
   const platformFee = totalGross * 0.10;
@@ -248,8 +401,11 @@ function DashboardStats({
       </div>
       
       <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-        <p className="text-gray-500 text-sm font-bold uppercase tracking-widest mb-2">Inventory Value</p>
-        <h3 className="text-4xl font-black text-blue-600">${inventoryValue.toLocaleString()}</h3>
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest"> 
+          {isSuperAdmin ? "Global Inventory Value" : "Inventory Value"}
+        </span>
+        
+        <div className="text-4xl font-black text-blue-600">${inventoryValue.toLocaleString()}</div>
       </div>
 
       <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
@@ -315,7 +471,7 @@ function OrderManagerSection({   storeId,   isSuperAdmin,   isAdmin }: {   store
       alert("Status updated to " + status);
     }
   } 
-  
+  /*
   async function fetchOrders() {
   if (!storeId && !isSuperAdmin) return;
   const useShopFilter = !isSuperAdmin && isAdmin;
@@ -349,15 +505,51 @@ function OrderManagerSection({   storeId,   isSuperAdmin,   isAdmin }: {   store
   } catch (err) {
     console.error("Fetch error:", err);
   }
-  } 
+  } */
   
-  
+  async function fetchOrders() {
+  try {
+    let query = supabase.from('orders').select(`
+      *,
+      order_items!inner (
+        id,
+        product_id,
+        quantity,
+        price_at_purchase,
+        products!inner (
+          store_id,
+          name
+        )
+      )
+    `);
+
+    if (!isSuperAdmin) {
+      query = query.eq('order_items.products.store_id', storeId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // The "as any[]" or "as Order[]" tells TypeScript to stop worrying 
+    // about the complex Supabase nested types.
+    const uniqueOrders = Array.from(
+      new Map((data as any[]).map(item => [item.id, item])).values()
+    );
+    
+    setOrders(uniqueOrders as Order[]); 
+  } catch (err) {
+    console.error("Fetch error:", err);
+  }
+}
 
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
       <h2 className="text-2xl font-bold mb-6">
           {isSuperAdmin ? "Recent Orders (All Stores)" : "Your Store Orders"}
+          
       </h2>
+      
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead className="text-gray-400 text-sm uppercase border-b">

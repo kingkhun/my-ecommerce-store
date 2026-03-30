@@ -10,6 +10,7 @@ interface Product {
   price: number;
   image_url: string;
   description: string;
+  stock_quantity: number;
 }
 
 interface Store {
@@ -106,12 +107,29 @@ export default function StoreFront() {
             {products.map((product) => (
                 <div key={product.id} className="group border rounded-2xl overflow-hidden hover:shadow-xl transition">
                 <img src={product.image_url} alt={product.name} className="w-full h-48 object-cover" />
+                <div className="flex items-center gap-1.5">
+                  {product.stock_quantity > 0 ? (
+                    <>
+                      <span className={`w-2 h-2 rounded-full ${product.stock_quantity < 5 ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`}></span>
+                      <span className={`text-xs font-bold ${product.stock_quantity < 5 ? 'text-orange-600' : 'text-gray-600'}`}>
+                        {product.stock_quantity} in stock
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-bold text-red-500 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                      Out of Stock
+                    </span>
+                  )}
+                </div>
+                
                 <div className="p-4">
                     <h3 className="font-bold text-lg">{product.name}</h3>
                     <p className="text-gray-500 text-sm mb-4 line-clamp-2">{product.description}</p>
                     <div className="flex justify-between items-center">
                     <span className="text-xl font-black">${product.price}</span>
                     <button 
+                    disabled={product.stock_quantity <= 0}
                     onClick={(e) => {
                       e.stopPropagation(); // Prevents clicking the card background
                       handleAddToCart(product);
